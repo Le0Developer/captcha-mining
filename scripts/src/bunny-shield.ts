@@ -4,6 +4,7 @@ import { Buffer } from "node:buffer";
 import { alert, notify } from "./lib/notifications";
 import fs from "fs-extra";
 import { tryAndPush } from "./lib/git";
+import { cleanJavascript } from "./lib/clean";
 
 const dir = path.resolve("../bunny-shield");
 await fs.ensureDir(dir);
@@ -24,7 +25,12 @@ export async function updateBunnyShield() {
       await alert(`Failed to fetch ${file}: ${res.status} ${text}`);
       continue;
     }
-    files.push({ file, text });
+    if(file.endsWith(".js")) {
+      const cleaned = await cleanJavascript(text, false);
+      files.push({ file, text: cleaned });
+    } else {
+      files.push({ file, text });
+    }
   }
 
   const fullBytes = new Uint8Array(files.reduce((acc, { text }) => acc + text.length, 0) + files.length);

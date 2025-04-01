@@ -18,7 +18,7 @@ var __reExport = (target, mod, secondTarget) => (__copyProps(target, mod, "defau
 
 // src/index.ts
 import { parse as parse2 } from "@babel/parser";
-import * as m51 from "@codemod/matchers";
+import * as m53 from "@codemod/matchers";
 import debug6 from "debug";
 import { join as join3, normalize as normalize2 } from "node:path";
 
@@ -186,11 +186,27 @@ function isReadonlyObject(binding, memberAccess, strict = true) {
 function isConstantBinding(binding) {
   if (binding.constant || binding.constantViolations[0] === binding.path)
     return true;
-  if (binding.constantViolations.length === 1) {
+  if (binding.kind === "param" && binding.constantViolations.length === 1) {
     const [path] = binding.constantViolations;
-    if (path.isAssignmentExpression()) return true;
+    if (path.isAssignmentExpression() && !isBindingPossiblyUsedBefore(binding, path))
+      return true;
   }
   return false;
+}
+function isBindingPossiblyUsedBefore(binding, before, includeParent = true) {
+  return binding.referencePaths.some((rp) => {
+    if (rp.node.start != null && before.node.start != null) {
+      if (rp.node.start <= before.node.start) return true;
+    } else {
+      return true;
+    }
+    if (includeParent) {
+      for (let p = rp.parentPath; p; p = p.parentPath) {
+        if (p === before) return true;
+      }
+    }
+    return false;
+  });
 }
 function isTemporaryVariable(binding, references, kind = "var") {
   return binding !== void 0 && binding.references === references && binding.constantViolations.length === 1 && (kind === "var" ? binding.path.isVariableDeclarator() && binding.path.node.init === null : binding.path.listKey === "params" && binding.path.isIdentifier());
@@ -225,9 +241,9 @@ function declarationOrAssignment(name, matcher16) {
     m.expressionStatement(m.assignmentExpression("=", name, matcher16))
   );
 }
-function declarationOrAssignmentExpression(name, matcher16) {
+function declaratorOrAssignmentExpression(name, matcher16) {
   return m.or(
-    m.variableDeclaration(m.anything(), [m.variableDeclarator(name, matcher16)]),
+    m.variableDeclarator(name, matcher16),
     m.assignmentExpression("=", name, matcher16)
   );
 }
@@ -509,16 +525,16 @@ function applyTransform(ast, transform, options) {
 }
 function applyTransforms(ast, transforms, options = {}) {
   options.log ??= true;
-  const name = options.name ?? transforms.map((t47) => t47.name).join(", ");
+  const name = options.name ?? transforms.map((t49) => t49.name).join(", ");
   if (options.log) logger(`${name}: started`);
   const state = { changes: 0 };
   for (const transform of transforms) {
     transform.run?.(ast, state);
   }
-  const traverseOptions = transforms.flatMap((t47) => t47.visitor?.() ?? []);
+  const traverseOptions = transforms.flatMap((t49) => t49.visitor?.() ?? []);
   if (traverseOptions.length > 0) {
     const visitor = traverse_exports.visitors.merge(traverseOptions);
-    visitor.noScope = options.noScope || transforms.every((t47) => !t47.scope);
+    visitor.noScope = options.noScope || transforms.every((t49) => !t49.scope);
     traverse_default(ast, visitor, void 0, state);
   }
   if (options.log) logger(`${name}: finished with ${state.changes} changes`);
@@ -528,10 +544,10 @@ function mergeTransforms(options) {
   return {
     name: options.name,
     tags: options.tags,
-    scope: options.transforms.some((t47) => t47.scope),
+    scope: options.transforms.some((t49) => t49.scope),
     visitor() {
       return traverse_exports.visitors.merge(
-        options.transforms.flatMap((t47) => t47.visitor?.() ?? [])
+        options.transforms.flatMap((t49) => t49.visitor?.() ?? [])
       );
     }
   };
@@ -684,7 +700,7 @@ var control_flow_object_default = {
       m6.or(m6.fromCapture(varId), m6.fromCapture(aliasId)),
       propertyName
     );
-    const varMatcher = declarationOrAssignmentExpression(
+    const varMatcher = declaratorOrAssignmentExpression(
       varId,
       m6.objectExpression(objectProperties)
     );
@@ -708,9 +724,14 @@ var control_flow_object_default = {
         );
         if (!props.size) return changes;
         const oldRefs = [...binding.referencePaths];
+        let failed = 0;
         [...binding.referencePaths].reverse().forEach((ref) => {
           const memberPath = ref.parentPath;
           const propName = getPropName(memberPath.node.property);
+          if (propName === void 0) {
+            failed++;
+            return;
+          }
           const value = props.get(propName);
           if (!value) {
             ref.addComment("leading", "webcrack:control_flow_missing_prop");
@@ -730,15 +751,15 @@ var control_flow_object_default = {
           const varDeclarator = findParent(ref, m6.variableDeclarator());
           if (varDeclarator) changes += transform(varDeclarator);
         });
-        path.remove();
+        if (!failed) path.remove();
         changes++;
       }
       return changes;
     }
     function transformObjectKeys(objBinding) {
-      const path = objBinding.kind === "param" ? objBinding.path.parentPath.get("body") : objBinding.path.parentPath;
-      const container = path.isBlock() ? path.node.body : path.container;
-      const startIndex = path.isBlock() ? 1 : path.key + 1;
+      const path = objBinding.kind === "param" ? objBinding.constantViolations[0].parentPath : objBinding.path.parentPath;
+      const container = path.container;
+      const startIndex = path.key + 1;
       const properties = [];
       for (let i = startIndex; i < container.length; i++) {
         const statement5 = container[i];
@@ -814,6 +835,15 @@ var control_flow_switch_default = {
       m7.matcher((s) => /^\d+(\|\d+)*$/.test(s))
     );
     const iterator = m7.capture(m7.identifier());
+    const assignment = m7.capture(
+      declarationOrAssignment(
+        sequenceName,
+        m7.callExpression(
+          constMemberExpression(m7.stringLiteral(sequenceString), "split"),
+          [m7.stringLiteral("|")]
+        )
+      )
+    );
     const cases = m7.capture(
       m7.arrayOf(
         m7.switchCase(
@@ -824,14 +854,9 @@ var control_flow_switch_default = {
     );
     const matcher16 = m7.blockStatement(
       m7.anyList(
+        m7.zeroOrMore(),
         // E.g. const sequence = "2|4|3|0|1".split("|")
-        declarationOrAssignment(
-          sequenceName,
-          m7.callExpression(
-            constMemberExpression(m7.stringLiteral(sequenceString), "split"),
-            [m7.stringLiteral("|")]
-          )
-        ),
+        assignment,
         // E.g. let iterator = 0 or -0x1a70 + 0x93d + 0x275 * 0x7
         declarationOrAssignment(iterator, m7.anything()),
         infiniteLoop(
@@ -855,6 +880,8 @@ var control_flow_switch_default = {
       BlockStatement: {
         exit(path) {
           if (!matcher16.match(path.node)) return;
+          let heading = 0;
+          for (; path.node.body[heading] !== assignment.current && heading < path.node.body.length; heading++);
           const caseStatements = new Map(
             cases.current.map((c) => [
               c.test.value,
@@ -863,7 +890,7 @@ var control_flow_switch_default = {
           );
           const sequence = sequenceString.current.split("|");
           const newStatements = sequence.flatMap((s) => caseStatements.get(s));
-          path.node.body.splice(0, 3, ...newStatements);
+          path.node.body.splice(heading, 3, ...newStatements);
           this.changes += newStatements.length + 3;
         }
       }
@@ -1156,7 +1183,7 @@ function findStringArray(ast) {
       m11.blockStatement([m11.returnStatement(m11.fromCapture(arrayIdentifier))])
     )
   );
-  const variableDeclaration14 = declarationOrAssignment(
+  const variableDeclaration16 = declarationOrAssignment(
     arrayIdentifier,
     arrayExpression10
   );
@@ -1167,14 +1194,14 @@ function findStringArray(ast) {
       // var array = ["hello", "world"];
       // return (getStringArray = function () { return array; })();
       m11.blockStatement([
-        variableDeclaration14,
+        variableDeclaration16,
         m11.returnStatement(m11.callExpression(functionAssignment))
       ]),
       // var array = ["hello", "world"];
       // getStringArray = function () { return array; });
       // return getStringArray();
       m11.blockStatement([
-        variableDeclaration14,
+        variableDeclaration16,
         m11.expressionStatement(functionAssignment),
         m11.returnStatement(m11.callExpression(m11.identifier(functionName)))
       ])
@@ -1213,7 +1240,7 @@ function findStringArray(ast) {
     // Simple string array inlining (only `array[0]`, `array[1]` etc references, no rotating/decoding).
     // May be used by older or different obfuscators
     VariableDeclaration(path) {
-      if (!variableDeclaration14.match(path.node)) return;
+      if (!variableDeclaration16.match(path.node)) return;
       const array = getArray();
       const length = array.elements.length;
       const binding = path.scope.getBinding(arrayIdentifier.current.name);
@@ -2175,7 +2202,7 @@ function generateExpressionName(expression3, stable) {
   } else if (expression3.isNumericLiteral()) {
     return "LN" + expression3.node.value.toString();
   } else if (expression3.isStringLiteral()) {
-    return "LS" + titleCase(expression3.node.value).slice(0, 100);
+    return "LS" + titleCase(expression3.node.value).slice(0, 20);
   } else if (expression3.isObjectExpression()) {
     return "O" + (stable ? `_${expression3.node.properties.length}` : "");
   } else if (expression3.isArrayExpression()) {
@@ -2187,7 +2214,7 @@ function generateExpressionName(expression3, stable) {
   }
 }
 function titleCase(str) {
-  return str.replace(/(?:^|\s)([a-z])/g, (_, m52) => m52.toUpperCase()).replace(/[^a-zA-Z0-9$_]/g, "");
+  return str.replace(/(?:^|\s)([a-z])/g, (_, m54) => m54.toUpperCase()).replace(/[^a-zA-Z0-9$_]/g, "");
 }
 
 // src/transpile/transforms/index.ts
@@ -2801,6 +2828,7 @@ __export(transforms_exports2, {
   infinity: () => infinity_default,
   invertBooleanLogic: () => invert_boolean_logic_default,
   jsonParse: () => json_parse_default,
+  letToConst: () => let_to_const_default,
   logicalToIf: () => logical_to_if_default,
   mergeElseIf: () => merge_else_if_default,
   mergeStrings: () => merge_strings_default,
@@ -2811,6 +2839,7 @@ __export(transforms_exports2, {
   splitForLoopVars: () => split_for_loop_vars_default,
   splitVariableDeclarations: () => split_variable_declarations_default,
   ternaryToIf: () => ternary_to_if_default,
+  truncateNumberLiteral: () => truncate_number_literal_default,
   typeofUndefined: () => typeof_undefined_default,
   unaryExpressions: () => unary_expressions_default,
   unminifyBooleans: () => unminify_booleans_default,
@@ -2978,17 +3007,17 @@ var invert_boolean_logic_default = {
       m29.or(...Object.values(INVERTED_LOGICAL_OPERATORS))
     );
     const logicalMatcher = m29.unaryExpression("!", logicalExpression10);
-    const binaryExpression15 = m29.capture(
+    const binaryExpression16 = m29.capture(
       m29.binaryExpression(m29.or(...Object.values(INVERTED_BINARY_OPERATORS)))
     );
-    const binaryMatcher = m29.unaryExpression("!", binaryExpression15);
+    const binaryMatcher = m29.unaryExpression("!", binaryExpression16);
     return {
       UnaryExpression: {
         exit(path) {
           const { argument } = path.node;
           if (binaryMatcher.match(path.node)) {
-            binaryExpression15.current.operator = INVERTED_BINARY_OPERATORS[binaryExpression15.current.operator];
-            path.replaceWith(binaryExpression15.current);
+            binaryExpression16.current.operator = INVERTED_BINARY_OPERATORS[binaryExpression16.current.operator];
+            path.replaceWith(binaryExpression16.current);
             this.changes++;
           } else if (logicalMatcher.match(path.node)) {
             let current = argument;
@@ -3039,9 +3068,61 @@ var json_parse_default = {
   }
 };
 
+// src/unminify/transforms/let-to-const.ts
+import * as t28 from "@babel/types";
+import * as m31 from "@codemod/matchers";
+var let_to_const_default = {
+  name: "let-to-const",
+  tags: ["safe"],
+  visitor: () => ({
+    VariableDeclaration: {
+      exit(path) {
+        if (!letMatcher.match(path.node)) return;
+        if (path.parentPath.isProgram()) return;
+        if (path.key === "init" && path.parentPath.isForStatement()) return;
+        const declarations = [];
+        let changes = 0;
+        for (const declaration of path.node.declarations) {
+          if (path.scope && isConstant(declaration.id, path.scope)) {
+            declarations.push(t28.variableDeclaration("const", [declaration]));
+            changes++;
+          } else {
+            declarations.push(t28.variableDeclaration("let", [declaration]));
+          }
+        }
+        if (!changes) return;
+        path.replaceWithMultiple(declarations);
+        this.changes += changes;
+      }
+    }
+  }),
+  scope: true
+};
+function isConstant(id, scope) {
+  if (t28.isIdentifier(id)) {
+    const binding = scope.getBinding(id.name);
+    return binding ? isConstantBinding(binding) : false;
+  }
+  if (t28.isArrayPattern(id)) {
+    return id.elements.every(
+      (element) => element && isConstant(element, scope)
+    );
+  }
+  if (t28.isObjectPattern(id)) {
+    return id.properties.every(
+      (property) => isConstant(
+        t28.isRestElement(property) ? property.argument : property.value,
+        scope
+      )
+    );
+  }
+  return false;
+}
+var letMatcher = m31.variableDeclaration("let", m31.anything());
+
 // src/unminify/transforms/logical-to-if.ts
 import { statement } from "@babel/template";
-import * as t28 from "@babel/types";
+import * as t29 from "@babel/types";
 var logical_to_if_default = {
   name: "logical-to-if",
   tags: ["safe"],
@@ -3052,7 +3133,7 @@ var logical_to_if_default = {
       ExpressionStatement: {
         exit(path) {
           const expression3 = path.node.expression;
-          if (!t28.isLogicalExpression(expression3)) return;
+          if (!t29.isLogicalExpression(expression3)) return;
           if (expression3.operator === "&&") {
             path.replaceWith(
               buildIf({
@@ -3077,105 +3158,26 @@ var logical_to_if_default = {
 };
 
 // src/unminify/transforms/merge-else-if.ts
-import * as m31 from "@codemod/matchers";
-var merge_else_if_default = {
-  name: "merge-else-if",
-  tags: ["safe"],
-  visitor() {
-    const nestedIf = m31.capture(m31.ifStatement());
-    const matcher16 = m31.ifStatement(
-      m31.anything(),
-      m31.anything(),
-      m31.blockStatement([nestedIf])
-    );
-    return {
-      IfStatement: {
-        exit(path) {
-          if (matcher16.match(path.node)) {
-            path.node.alternate = nestedIf.current;
-            this.changes++;
-          }
-        }
-      }
-    };
-  }
-};
-
-// src/unminify/transforms/number-expressions.ts
-import * as t29 from "@babel/types";
-import * as m32 from "@codemod/matchers";
-var number_expressions_default = {
-  name: "number-expressions",
-  tags: ["safe"],
-  visitor: () => ({
-    "BinaryExpression|UnaryExpression": {
-      exit(path) {
-        if (!matcher12.match(path.node)) return;
-        const evaluated = path.evaluate();
-        if (t29.isBinaryExpression(path.node, { operator: "/" }) && !Number.isInteger(evaluated.value)) {
-          return;
-        }
-        path.replaceWith(t29.valueToNode(evaluated.value));
-        path.skip();
-        this.changes++;
-      }
-    }
-  })
-};
-var matcher12 = m32.or(
-  m32.unaryExpression("-", m32.or(m32.stringLiteral(), m32.numericLiteral())),
-  m32.binaryExpression(
-    m32.or("+", "-", "/", "%", "*", "**", "&", "|", ">>", ">>>", "<<", "^"),
-    m32.or(
-      m32.stringLiteral(),
-      m32.numericLiteral(),
-      m32.unaryExpression("-", m32.numericLiteral())
-    ),
-    m32.or(
-      m32.stringLiteral(),
-      m32.numericLiteral(),
-      m32.unaryExpression("-", m32.numericLiteral())
-    )
-  )
-);
-
-// src/unminify/transforms/raw-literals.ts
-var raw_literals_default = {
-  name: "raw-literals",
-  tags: ["safe"],
-  visitor: () => ({
-    StringLiteral(path) {
-      if (path.node.extra) {
-        path.node.extra = void 0;
-        this.changes++;
-      }
-    },
-    NumericLiteral(path) {
-      if (path.node.extra) {
-        path.node.extra = void 0;
-        this.changes++;
-      }
-    }
-  })
-};
+import * as m33 from "@codemod/matchers";
+import * as t31 from "@babel/types";
 
 // src/unminify/transforms/remove-double-not.ts
 import * as t30 from "@babel/types";
-import * as m33 from "@codemod/matchers";
+import * as m32 from "@codemod/matchers";
 var remove_double_not_default = {
   name: "remove-double-not",
   tags: ["safe"],
   visitor() {
-    const expression3 = m33.capture(m33.anyExpression());
-    const doubleNot = m33.unaryExpression(
+    const expression3 = m32.capture(m32.anyExpression());
+    const doubleNot = m32.unaryExpression(
       "!",
-      m33.unaryExpression("!", expression3)
+      m32.unaryExpression("!", expression3)
     );
-    const tripleNot = m33.unaryExpression("!", doubleNot);
-    const arrayCall = m33.callExpression(
+    const tripleNot = m32.unaryExpression("!", doubleNot);
+    const arrayCall = m32.callExpression(
       constMemberExpression(
-        m33.arrayExpression(),
-        m33.or(
+        m32.arrayExpression(),
+        m32.or(
           "filter",
           "find",
           "findLast",
@@ -3185,7 +3187,7 @@ var remove_double_not_default = {
           "every"
         )
       ),
-      [m33.arrowFunctionExpression(m33.anything(), doubleNot)]
+      [m32.arrowFunctionExpression(m32.anything(), doubleNot)]
     );
     return {
       Conditional: {
@@ -3218,21 +3220,133 @@ var remove_double_not_default = {
   }
 };
 
-// src/unminify/transforms/sequence.ts
-import * as t31 from "@babel/types";
+// src/unminify/transforms/merge-else-if.ts
+var merge_else_if_default = {
+  name: "merge-else-if",
+  tags: ["safe"],
+  visitor() {
+    const nestedIf = m33.capture(m33.ifStatement());
+    const matcherElse = m33.ifStatement(
+      m33.anything(),
+      m33.anything(),
+      m33.blockStatement([nestedIf])
+    );
+    const matcherIf = m33.ifStatement(
+      m33.anything(),
+      m33.blockStatement([nestedIf]),
+      m33.anything()
+    );
+    const matchIfNegation = m33.ifStatement(
+      m33.unaryExpression("!", m33.anything()),
+      m33.anything(),
+      m33.anything()
+    );
+    return {
+      IfStatement: {
+        exit(path) {
+          if (matcherElse.match(path.node)) {
+            path.node.alternate = nestedIf.current;
+            this.changes++;
+          }
+          if (matcherIf.match(path.node) && path.node.alternate && !nestedIf.match(path.node.alternate)) {
+            path.node.test = t31.unaryExpression("!", path.node.test);
+            path.node.consequent = path.node.alternate;
+            path.node.alternate = nestedIf.current;
+            this.changes += applyTransforms(
+              path.node,
+              [invert_boolean_logic_default, remove_double_not_default],
+              {
+                log: false
+              }
+            ).changes;
+            this.changes++;
+          }
+          if (matchIfNegation.match(path.node) && path.node.alternate && !nestedIf.match(path.node.alternate)) {
+            path.node.test = path.node.test.argument;
+            const temp = path.node.consequent;
+            path.node.consequent = path.node.alternate;
+            path.node.alternate = temp;
+            this.changes++;
+          }
+        }
+      }
+    };
+  }
+};
+
+// src/unminify/transforms/number-expressions.ts
+import * as t32 from "@babel/types";
 import * as m34 from "@codemod/matchers";
+var number_expressions_default = {
+  name: "number-expressions",
+  tags: ["safe"],
+  visitor: () => ({
+    "BinaryExpression|UnaryExpression": {
+      exit(path) {
+        if (!matcher12.match(path.node)) return;
+        const evaluated = path.evaluate();
+        if (t32.isBinaryExpression(path.node, { operator: "/" }) && !Number.isInteger(evaluated.value)) {
+          return;
+        }
+        path.replaceWith(t32.valueToNode(evaluated.value));
+        path.skip();
+        this.changes++;
+      }
+    }
+  })
+};
+var matcher12 = m34.or(
+  m34.unaryExpression("-", m34.or(m34.stringLiteral(), m34.numericLiteral())),
+  m34.binaryExpression(
+    m34.or("+", "-", "/", "%", "*", "**", "&", "|", ">>", ">>>", "<<", "^"),
+    m34.or(
+      m34.stringLiteral(),
+      m34.numericLiteral(),
+      m34.unaryExpression("-", m34.numericLiteral())
+    ),
+    m34.or(
+      m34.stringLiteral(),
+      m34.numericLiteral(),
+      m34.unaryExpression("-", m34.numericLiteral())
+    )
+  )
+);
+
+// src/unminify/transforms/raw-literals.ts
+var raw_literals_default = {
+  name: "raw-literals",
+  tags: ["safe"],
+  visitor: () => ({
+    StringLiteral(path) {
+      if (path.node.extra) {
+        path.node.extra = void 0;
+        this.changes++;
+      }
+    },
+    NumericLiteral(path) {
+      if (path.node.extra) {
+        path.node.extra = void 0;
+        this.changes++;
+      }
+    }
+  })
+};
+
+// src/unminify/transforms/sequence.ts
+import * as t33 from "@babel/types";
+import * as m35 from "@codemod/matchers";
 var sequence_default = {
   name: "sequence",
   tags: ["safe"],
   visitor() {
-    const assignmentVariable = m34.or(
-      m34.identifier(),
-      m34.memberExpression(m34.identifier(), m34.or(m34.identifier(), safeLiteral))
+    const assignmentVariable = m35.or(
+      m35.identifier(),
+      m35.memberExpression(m35.identifier(), m35.or(m35.identifier(), safeLiteral))
     );
-    const assignedSequence = m34.capture(m34.sequenceExpression());
-    const assignmentMatcher = m34.assignmentExpression(
+    const assignedSequence = m35.capture(m35.sequenceExpression());
+    const assignmentMatcher = m35.assignmentExpression(
       // "||=", "&&=", and "??=" have short-circuiting behavior
-      m34.or(
+      m35.or(
         "=",
         "+=",
         "-=",
@@ -3256,16 +3370,16 @@ var sequence_default = {
           if (!assignmentMatcher.match(path.node)) return;
           const { expressions } = assignedSequence.current;
           path.node.right = expressions.pop();
-          const newNodes = path.parentPath.isExpressionStatement() ? expressions.map(t31.expressionStatement) : expressions;
+          const newNodes = path.parentPath.isExpressionStatement() ? expressions.map(t33.expressionStatement) : expressions;
           path.insertBefore(newNodes);
           this.changes++;
         }
       },
       ExpressionStatement: {
         exit(path) {
-          if (!t31.isSequenceExpression(path.node.expression)) return;
+          if (!t33.isSequenceExpression(path.node.expression)) return;
           const statements = path.node.expression.expressions.map(
-            t31.expressionStatement
+            t33.expressionStatement
           );
           path.replaceWithMultiple(statements);
           this.changes++;
@@ -3273,93 +3387,93 @@ var sequence_default = {
       },
       ReturnStatement: {
         exit(path) {
-          if (!t31.isSequenceExpression(path.node.argument)) return;
+          if (!t33.isSequenceExpression(path.node.argument)) return;
           const { expressions } = path.node.argument;
           path.node.argument = expressions.pop();
-          const statements = expressions.map(t31.expressionStatement);
+          const statements = expressions.map(t33.expressionStatement);
           path.insertBefore(statements);
           this.changes++;
         }
       },
       IfStatement: {
         exit(path) {
-          if (!t31.isSequenceExpression(path.node.test)) return;
+          if (!t33.isSequenceExpression(path.node.test)) return;
           const { expressions } = path.node.test;
           path.node.test = expressions.pop();
-          const statements = expressions.map(t31.expressionStatement);
+          const statements = expressions.map(t33.expressionStatement);
           path.insertBefore(statements);
           this.changes++;
         }
       },
       SwitchStatement: {
         exit(path) {
-          if (!t31.isSequenceExpression(path.node.discriminant)) return;
+          if (!t33.isSequenceExpression(path.node.discriminant)) return;
           const { expressions } = path.node.discriminant;
           path.node.discriminant = expressions.pop();
-          const statements = expressions.map(t31.expressionStatement);
+          const statements = expressions.map(t33.expressionStatement);
           path.insertBefore(statements);
           this.changes++;
         }
       },
       ThrowStatement: {
         exit(path) {
-          if (!t31.isSequenceExpression(path.node.argument)) return;
+          if (!t33.isSequenceExpression(path.node.argument)) return;
           const { expressions } = path.node.argument;
           path.node.argument = expressions.pop();
-          const statements = expressions.map(t31.expressionStatement);
+          const statements = expressions.map(t33.expressionStatement);
           path.insertBefore(statements);
           this.changes++;
         }
       },
       ForInStatement: {
         exit(path) {
-          if (!t31.isSequenceExpression(path.node.right)) return;
+          if (!t33.isSequenceExpression(path.node.right)) return;
           const { expressions } = path.node.right;
           path.node.right = expressions.pop();
-          const statements = expressions.map(t31.expressionStatement);
+          const statements = expressions.map(t33.expressionStatement);
           path.insertBefore(statements);
           this.changes++;
         }
       },
       ForOfStatement: {
         exit(path) {
-          if (!t31.isSequenceExpression(path.node.right)) return;
+          if (!t33.isSequenceExpression(path.node.right)) return;
           const { expressions } = path.node.right;
           path.node.right = expressions.pop();
-          const statements = expressions.map(t31.expressionStatement);
+          const statements = expressions.map(t33.expressionStatement);
           path.insertBefore(statements);
           this.changes++;
         }
       },
       ForStatement: {
         exit(path) {
-          if (t31.isSequenceExpression(path.node.init)) {
+          if (t33.isSequenceExpression(path.node.init)) {
             const statements = path.node.init.expressions.map(
-              t31.expressionStatement
+              t33.expressionStatement
             );
             path.node.init = null;
             path.insertBefore(statements);
             this.changes++;
           }
-          if (t31.isSequenceExpression(path.node.update) && path.node.body.type === "EmptyStatement") {
+          if (t33.isSequenceExpression(path.node.update) && path.node.body.type === "EmptyStatement") {
             const { expressions } = path.node.update;
             path.node.update = expressions.pop();
-            const statements = expressions.map(t31.expressionStatement);
-            path.node.body = t31.blockStatement(statements);
+            const statements = expressions.map(t33.expressionStatement);
+            path.node.body = t33.blockStatement(statements);
             this.changes++;
           }
         }
       },
       VariableDeclaration: {
         exit(path) {
-          const sequence = m34.capture(m34.sequenceExpression());
-          const matcher16 = m34.variableDeclaration(void 0, [
-            m34.variableDeclarator(void 0, sequence)
+          const sequence = m35.capture(m35.sequenceExpression());
+          const matcher16 = m35.variableDeclaration(void 0, [
+            m35.variableDeclarator(void 0, sequence)
           ]);
           if (!matcher16.match(path.node)) return;
           const { expressions } = sequence.current;
           path.node.declarations[0].init = expressions.pop();
-          const statements = expressions.map(t31.expressionStatement);
+          const statements = expressions.map(t33.expressionStatement);
           path.getStatementParent()?.insertBefore(statements);
           this.changes++;
         }
@@ -3378,10 +3492,10 @@ var sequence_default = {
 };
 
 // src/unminify/transforms/split-for-loop-vars.ts
-import * as t32 from "@babel/types";
-import * as m35 from "@codemod/matchers";
-var matcher13 = m35.forStatement(
-  m35.variableDeclaration("var", m35.arrayOf(m35.variableDeclarator(m35.identifier())))
+import * as t34 from "@babel/types";
+import * as m36 from "@codemod/matchers";
+var matcher13 = m36.forStatement(
+  m36.variableDeclaration("var", m36.arrayOf(m36.variableDeclarator(m36.identifier())))
 );
 var split_for_loop_vars_default = {
   name: "split-for-loop-vars",
@@ -3405,7 +3519,7 @@ var split_for_loop_vars_default = {
             (reference) => reference.find((p) => p.node === test || p.node === update)
           );
           if (isUsedInTestOrUpdate) break;
-          path.insertBefore(t32.variableDeclaration("var", [declarator]));
+          path.insertBefore(t34.variableDeclaration("var", [declarator]));
           declarations.shift();
           i--;
           this.changes++;
@@ -3417,7 +3531,7 @@ var split_for_loop_vars_default = {
 };
 
 // src/unminify/transforms/split-variable-declarations.ts
-import * as t33 from "@babel/types";
+import * as t35 from "@babel/types";
 var split_variable_declarations_default = {
   name: "split-variable-declarations",
   tags: ["safe"],
@@ -3429,7 +3543,7 @@ var split_variable_declarations_default = {
             if (!path.parentPath.node.test && !path.parentPath.node.update && path.node.kind === "var") {
               path.parentPath.insertBefore(
                 path.node.declarations.map(
-                  (declaration) => t33.variableDeclaration(path.node.kind, [declaration])
+                  (declaration) => t35.variableDeclaration(path.node.kind, [declaration])
                 )
               );
               path.remove();
@@ -3439,15 +3553,15 @@ var split_variable_declarations_default = {
             if (path.parentPath.isExportNamedDeclaration()) {
               path.parentPath.replaceWithMultiple(
                 path.node.declarations.map(
-                  (declaration) => t33.exportNamedDeclaration(
-                    t33.variableDeclaration(path.node.kind, [declaration])
+                  (declaration) => t35.exportNamedDeclaration(
+                    t35.variableDeclaration(path.node.kind, [declaration])
                   )
                 )
               );
             } else {
               path.replaceWithMultiple(
                 path.node.declarations.map(
-                  (declaration) => t33.variableDeclaration(path.node.kind, [declaration])
+                  (declaration) => t35.variableDeclaration(path.node.kind, [declaration])
                 )
               );
             }
@@ -3461,15 +3575,15 @@ var split_variable_declarations_default = {
 
 // src/unminify/transforms/ternary-to-if.ts
 import { statement as statement2 } from "@babel/template";
-import * as m36 from "@codemod/matchers";
+import * as m37 from "@codemod/matchers";
 var ternary_to_if_default = {
   name: "ternary-to-if",
   tags: ["safe"],
   visitor() {
-    const test = m36.capture(m36.anyExpression());
-    const consequent = m36.capture(m36.anyExpression());
-    const alternate = m36.capture(m36.anyExpression());
-    const conditional = m36.conditionalExpression(test, consequent, alternate);
+    const test = m37.capture(m37.anyExpression());
+    const consequent = m37.capture(m37.anyExpression());
+    const alternate = m37.capture(m37.anyExpression());
+    const conditional = m37.conditionalExpression(test, consequent, alternate);
     const buildIf = statement2`if (TEST) { CONSEQUENT; } else { ALTERNATE; }`;
     const buildIfReturn = statement2`if (TEST) { return CONSEQUENT; } else { return ALTERNATE; }`;
     return {
@@ -3505,9 +3619,38 @@ var ternary_to_if_default = {
   }
 };
 
+// src/unminify/transforms/truncate-number-literal.ts
+import * as m38 from "@codemod/matchers";
+var truncate_number_literal_default = {
+  name: "truncate-number-literal",
+  tags: ["safe"],
+  visitor: () => {
+    const binaryOperators = m38.or("|", "&", "^", "<<", ">>", ">>>");
+    const literal = m38.capture(m38.numericLiteral());
+    const matcher16 = m38.or(
+      m38.binaryExpression(binaryOperators, literal, m38.anything()),
+      m38.binaryExpression(binaryOperators, m38.anything(), literal)
+    );
+    return {
+      BinaryExpression: {
+        exit(path) {
+          if (!matcher16.match(path.node)) return;
+          const value = literal.current.value;
+          const isShifter = literal.current === path.node.right && (path.node.operator === "<<" || path.node.operator === ">>");
+          const truncation = isShifter ? 31 : 4294967295;
+          const truncated = value & truncation;
+          if (truncated === value) return;
+          literal.current.value = truncated;
+          this.changes++;
+        }
+      }
+    };
+  }
+};
+
 // src/unminify/transforms/typeof-undefined.ts
-import * as t34 from "@babel/types";
-import * as m37 from "@codemod/matchers";
+import * as t36 from "@babel/types";
+import * as m39 from "@codemod/matchers";
 var OPERATOR_MAP = {
   ">": "===",
   "<": "!=="
@@ -3516,22 +3659,22 @@ var typeof_undefined_default = {
   name: "typeof-undefined",
   tags: ["safe"],
   visitor() {
-    const operator = m37.capture(m37.or(">", "<"));
-    const argument = m37.capture(m37.anyExpression());
-    const matcher16 = m37.binaryExpression(
+    const operator = m39.capture(m39.or(">", "<"));
+    const argument = m39.capture(m39.anyExpression());
+    const matcher16 = m39.binaryExpression(
       operator,
-      m37.unaryExpression("typeof", argument),
-      m37.stringLiteral("u")
+      m39.unaryExpression("typeof", argument),
+      m39.stringLiteral("u")
     );
     return {
       BinaryExpression: {
         exit(path) {
           if (!matcher16.match(path.node)) return;
           path.replaceWith(
-            t34.binaryExpression(
+            t36.binaryExpression(
               OPERATOR_MAP[operator.current],
-              t34.unaryExpression("typeof", argument.current),
-              t34.stringLiteral("undefined")
+              t36.unaryExpression("typeof", argument.current),
+              t36.stringLiteral("undefined")
             )
           );
           this.changes++;
@@ -3542,17 +3685,17 @@ var typeof_undefined_default = {
 };
 
 // src/unminify/transforms/unary-expressions.ts
-import * as t35 from "@babel/types";
-import * as m38 from "@codemod/matchers";
+import * as t37 from "@babel/types";
+import * as m40 from "@codemod/matchers";
 var unary_expressions_default = {
   name: "unary-expressions",
   tags: ["safe"],
   visitor() {
-    const argument = m38.capture(m38.anyExpression());
-    const matcher16 = m38.expressionStatement(
-      m38.unaryExpression(m38.or("void", "!", "typeof"), argument)
+    const argument = m40.capture(m40.anyExpression());
+    const matcher16 = m40.expressionStatement(
+      m40.unaryExpression(m40.or("void", "!", "typeof"), argument)
     );
-    const returnVoid = m38.returnStatement(m38.unaryExpression("void", argument));
+    const returnVoid = m40.returnStatement(m40.unaryExpression("void", argument));
     return {
       ExpressionStatement: {
         exit(path) {
@@ -3565,7 +3708,7 @@ var unary_expressions_default = {
         exit(path) {
           if (!returnVoid.match(path.node)) return;
           path.replaceWith(argument.current);
-          path.insertAfter(t35.returnStatement());
+          path.insertAfter(t37.returnStatement());
           this.changes++;
         }
       }
@@ -3574,47 +3717,47 @@ var unary_expressions_default = {
 };
 
 // src/unminify/transforms/unminify-booleans.ts
-import * as t36 from "@babel/types";
-import * as m39 from "@codemod/matchers";
+import * as t38 from "@babel/types";
+import * as m41 from "@codemod/matchers";
 var unminify_booleans_default = {
   name: "unminify-booleans",
   tags: ["safe"],
   visitor: () => ({
     UnaryExpression(path) {
       if (trueMatcher2.match(path.node)) {
-        path.replaceWith(t36.booleanLiteral(true));
+        path.replaceWith(t38.booleanLiteral(true));
         this.changes++;
       } else if (falseMatcher2.match(path.node)) {
-        path.replaceWith(t36.booleanLiteral(false));
+        path.replaceWith(t38.booleanLiteral(false));
         this.changes++;
       }
     }
   })
 };
-var trueMatcher2 = m39.or(
-  m39.unaryExpression("!", m39.numericLiteral(0)),
-  m39.unaryExpression("!", m39.unaryExpression("!", m39.numericLiteral(1))),
-  m39.unaryExpression("!", m39.unaryExpression("!", m39.arrayExpression([])))
+var trueMatcher2 = m41.or(
+  m41.unaryExpression("!", m41.numericLiteral(0)),
+  m41.unaryExpression("!", m41.unaryExpression("!", m41.numericLiteral(1))),
+  m41.unaryExpression("!", m41.unaryExpression("!", m41.arrayExpression([])))
 );
-var falseMatcher2 = m39.or(
-  m39.unaryExpression("!", m39.numericLiteral(1)),
-  m39.unaryExpression("!", m39.arrayExpression([]))
+var falseMatcher2 = m41.or(
+  m41.unaryExpression("!", m41.numericLiteral(1)),
+  m41.unaryExpression("!", m41.arrayExpression([]))
 );
 
 // src/unminify/transforms/void-to-undefined.ts
-import * as t37 from "@babel/types";
-import * as m40 from "@codemod/matchers";
+import * as t39 from "@babel/types";
+import * as m42 from "@codemod/matchers";
 var void_to_undefined_default = {
   name: "void-to-undefined",
   tags: ["safe"],
   scope: true,
   visitor: () => {
-    const matcher16 = m40.unaryExpression("void", m40.numericLiteral(0));
+    const matcher16 = m42.unaryExpression("void", m42.numericLiteral(0));
     return {
       UnaryExpression: {
         exit(path) {
           if (matcher16.match(path.node) && !path.scope.hasBinding("undefined", { noGlobals: true })) {
-            path.replaceWith(t37.identifier("undefined"));
+            path.replaceWith(t39.identifier("undefined"));
             this.changes++;
           }
         }
@@ -3624,8 +3767,8 @@ var void_to_undefined_default = {
 };
 
 // src/unminify/transforms/yoda.ts
-import * as t38 from "@babel/types";
-import * as m41 from "@codemod/matchers";
+import * as t40 from "@babel/types";
+import * as m43 from "@codemod/matchers";
 var FLIPPED_OPERATORS = {
   "==": "==",
   "===": "===",
@@ -3644,30 +3787,30 @@ var yoda_default = {
   name: "yoda",
   tags: ["safe"],
   visitor: () => {
-    const pureValue = m41.or(
-      m41.stringLiteral(),
-      m41.numericLiteral(),
-      m41.unaryExpression(
+    const pureValue = m43.or(
+      m43.stringLiteral(),
+      m43.numericLiteral(),
+      m43.unaryExpression(
         "-",
-        m41.or(m41.numericLiteral(), m41.identifier("Infinity"))
+        m43.or(m43.numericLiteral(), m43.identifier("Infinity"))
       ),
-      m41.booleanLiteral(),
-      m41.nullLiteral(),
-      m41.identifier("undefined"),
-      m41.identifier("NaN"),
-      m41.identifier("Infinity")
+      m43.booleanLiteral(),
+      m43.nullLiteral(),
+      m43.identifier("undefined"),
+      m43.identifier("NaN"),
+      m43.identifier("Infinity")
     );
-    const matcher16 = m41.binaryExpression(
-      m41.or(...Object.values(FLIPPED_OPERATORS)),
+    const matcher16 = m43.binaryExpression(
+      m43.or(...Object.values(FLIPPED_OPERATORS)),
       pureValue,
-      m41.matcher((node) => !pureValue.match(node))
+      m43.matcher((node) => !pureValue.match(node))
     );
     return {
       BinaryExpression: {
         exit(path) {
           if (matcher16.match(path.node)) {
             path.replaceWith(
-              t38.binaryExpression(
+              t40.binaryExpression(
                 FLIPPED_OPERATORS[path.node.operator],
                 path.node.right,
                 path.node.left
@@ -3692,8 +3835,8 @@ var unminify_default = mergeTransforms({
 import debug5 from "debug";
 
 // src/unpack/browserify/index.ts
-import * as t39 from "@babel/types";
-import * as m42 from "@codemod/matchers";
+import * as t41 from "@babel/types";
+import * as m44 from "@codemod/matchers";
 
 // src/unpack/path.ts
 import { posix } from "node:path";
@@ -3862,22 +4005,22 @@ var unpackBrowserify = {
   scope: true,
   visitor(options) {
     const modules = /* @__PURE__ */ new Map();
-    const files = m42.capture(
-      m42.arrayOf(
-        m42.objectProperty(
-          m42.or(m42.numericLiteral(), m42.stringLiteral(), m42.identifier()),
-          m42.arrayExpression([
+    const files = m44.capture(
+      m44.arrayOf(
+        m44.objectProperty(
+          m44.or(m44.numericLiteral(), m44.stringLiteral(), m44.identifier()),
+          m44.arrayExpression([
             // function(require, module, exports) {...}
-            m42.functionExpression(),
+            m44.functionExpression(),
             // dependencies: { './add': 1, 'lib': 3 }
-            m42.objectExpression(
-              m42.arrayOf(
-                m42.objectProperty(
+            m44.objectExpression(
+              m44.arrayOf(
+                m44.objectProperty(
                   constKey(),
-                  m42.or(
-                    m42.numericLiteral(),
-                    m42.identifier("undefined"),
-                    m42.stringLiteral()
+                  m44.or(
+                    m44.numericLiteral(),
+                    m44.identifier("undefined"),
+                    m44.stringLiteral()
                   )
                 )
               )
@@ -3886,34 +4029,34 @@ var unpackBrowserify = {
         )
       )
     );
-    const entryIdMatcher = m42.capture(
-      m42.or(m42.numericLiteral(), m42.stringLiteral())
+    const entryIdMatcher = m44.capture(
+      m44.or(m44.numericLiteral(), m44.stringLiteral())
     );
-    const matcher16 = m42.callExpression(
-      m42.or(
+    const matcher16 = m44.callExpression(
+      m44.or(
         // (function (files, cache, entryIds) {...})(...)
-        m42.functionExpression(void 0, [
-          m42.identifier(),
-          m42.identifier(),
-          m42.identifier()
+        m44.functionExpression(void 0, [
+          m44.identifier(),
+          m44.identifier(),
+          m44.identifier()
         ]),
         // (function () { function init(files, cache, entryIds) {...} return init; })()(...)
         iife(
           [],
-          m42.blockStatement([
-            m42.functionDeclaration(void 0, [
-              m42.identifier(),
-              m42.identifier(),
-              m42.identifier()
+          m44.blockStatement([
+            m44.functionDeclaration(void 0, [
+              m44.identifier(),
+              m44.identifier(),
+              m44.identifier()
             ]),
-            m42.returnStatement(m42.identifier())
+            m44.returnStatement(m44.identifier())
           ])
         )
       ),
       [
-        m42.objectExpression(files),
-        m42.objectExpression(),
-        m42.arrayExpression(m42.anyList(entryIdMatcher, m42.zeroOrMore()))
+        m44.objectExpression(files),
+        m44.objectExpression(),
+        m44.arrayExpression(m44.anyList(entryIdMatcher, m44.zeroOrMore()))
       ]
     );
     return {
@@ -3942,7 +4085,7 @@ var unpackBrowserify = {
             dependencies[depId] = filePath;
           }
           renameParameters(fn, ["require", "module", "exports"]);
-          const file5 = t39.file(t39.program(fn.node.body.body));
+          const file5 = t41.file(t41.program(fn.node.body.body));
           const module3 = new BrowserifyModule(
             id,
             file5,
@@ -3966,70 +4109,70 @@ var unpackBrowserify = {
 };
 
 // src/unpack/webpack/unpack-webpack-4.ts
+import * as t45 from "@babel/types";
+import * as m50 from "@codemod/matchers";
+
+// src/unpack/webpack/bundle.ts
 import * as t43 from "@babel/types";
 import * as m48 from "@codemod/matchers";
 
-// src/unpack/webpack/bundle.ts
-import * as t41 from "@babel/types";
-import * as m46 from "@codemod/matchers";
-
 // src/unpack/webpack/esm.ts
 import { statement as statement3 } from "@babel/template";
-import * as t40 from "@babel/types";
-import * as m43 from "@codemod/matchers";
+import * as t42 from "@babel/types";
+import * as m45 from "@codemod/matchers";
 var buildNamespaceImport = statement3`import * as NAME from "PATH";`;
 var buildNamedExportLet = statement3`export let NAME = VALUE;`;
 function convertESM(module3) {
-  const defineEsModuleMatcher = m43.expressionStatement(
-    m43.callExpression(constMemberExpression("require", "r"), [m43.identifier()])
+  const defineEsModuleMatcher = m45.expressionStatement(
+    m45.callExpression(constMemberExpression("require", "r"), [m45.identifier()])
   );
-  const exportsName = m43.capture(m43.identifier());
-  const exportedName = m43.capture(m43.anyString());
-  const returnedValue = m43.capture(m43.anyExpression());
-  const defineExportMatcher = m43.expressionStatement(
-    m43.callExpression(constMemberExpression("require", "d"), [
+  const exportsName = m45.capture(m45.identifier());
+  const exportedName = m45.capture(m45.anyString());
+  const returnedValue = m45.capture(m45.anyExpression());
+  const defineExportMatcher = m45.expressionStatement(
+    m45.callExpression(constMemberExpression("require", "d"), [
       exportsName,
-      m43.stringLiteral(exportedName),
-      m43.functionExpression(
+      m45.stringLiteral(exportedName),
+      m45.functionExpression(
         void 0,
         [],
-        m43.blockStatement([m43.returnStatement(returnedValue)])
+        m45.blockStatement([m45.returnStatement(returnedValue)])
       )
     ])
   );
-  const emptyObjectVarMatcher = m43.variableDeclarator(
-    m43.fromCapture(exportsName),
-    m43.objectExpression([])
+  const emptyObjectVarMatcher = m45.variableDeclarator(
+    m45.fromCapture(exportsName),
+    m45.objectExpression([])
   );
-  const properties = m43.capture(
-    m43.arrayOf(
-      m43.objectProperty(
-        m43.identifier(),
-        m43.arrowFunctionExpression([], m43.anyExpression())
+  const properties = m45.capture(
+    m45.arrayOf(
+      m45.objectProperty(
+        m45.identifier(),
+        m45.arrowFunctionExpression([], m45.anyExpression())
       )
     )
   );
-  const defineExportsMatcher = m43.expressionStatement(
-    m43.callExpression(constMemberExpression("require", "d"), [
+  const defineExportsMatcher = m45.expressionStatement(
+    m45.callExpression(constMemberExpression("require", "d"), [
       exportsName,
-      m43.objectExpression(properties)
+      m45.objectExpression(properties)
     ])
   );
-  const requireVariable = m43.capture(m43.identifier());
-  const requiredModuleId = m43.capture(m43.anyNumber());
-  const requireMatcher2 = m43.variableDeclaration(void 0, [
-    m43.variableDeclarator(
+  const requireVariable = m45.capture(m45.identifier());
+  const requiredModuleId = m45.capture(m45.anyNumber());
+  const requireMatcher2 = m45.variableDeclaration(void 0, [
+    m45.variableDeclarator(
       requireVariable,
-      m43.callExpression(m43.identifier("require"), [
-        m43.numericLiteral(requiredModuleId)
+      m45.callExpression(m45.identifier("require"), [
+        m45.numericLiteral(requiredModuleId)
       ])
     )
   ]);
-  const hmdMatcher = m43.expressionStatement(
-    m43.assignmentExpression(
+  const hmdMatcher = m45.expressionStatement(
+    m45.assignmentExpression(
       "=",
-      m43.identifier("module"),
-      m43.callExpression(constMemberExpression("require", "hmd"))
+      m45.identifier("module"),
+      m45.callExpression(constMemberExpression("require", "hmd"))
     )
   );
   traverse_default(module3.ast, {
@@ -4055,7 +4198,7 @@ function convertESM(module3) {
           const returnedValue2 = property.value.body;
           if (emptyObject) {
             emptyObject.properties.push(
-              t40.objectProperty(exportedKey, returnedValue2)
+              t42.objectProperty(exportedKey, returnedValue2)
             );
           } else {
             exportVariable(path, returnedValue2, exportedKey.name);
@@ -4077,35 +4220,35 @@ function exportVariable(requireDPath, value, exportName) {
     if (!binding) return;
     const declaration = findPath(
       binding.path,
-      m43.or(
-        m43.variableDeclaration(),
-        m43.classDeclaration(),
-        m43.functionDeclaration()
+      m45.or(
+        m45.variableDeclaration(),
+        m45.classDeclaration(),
+        m45.functionDeclaration()
       )
     );
     if (!declaration) return;
     if (exportName === "default") {
       declaration.replaceWith(
-        t40.exportDefaultDeclaration(
-          t40.isVariableDeclaration(declaration.node) ? declaration.node.declarations[0].init : declaration.node
+        t42.exportDefaultDeclaration(
+          t42.isVariableDeclaration(declaration.node) ? declaration.node.declarations[0].init : declaration.node
         )
       );
     } else {
       renameFast(binding, exportName);
-      declaration.replaceWith(t40.exportNamedDeclaration(declaration.node));
+      declaration.replaceWith(t42.exportNamedDeclaration(declaration.node));
     }
   } else if (exportName === "default") {
-    requireDPath.insertAfter(t40.exportDefaultDeclaration(value));
+    requireDPath.insertAfter(t42.exportDefaultDeclaration(value));
   } else {
     requireDPath.insertAfter(
-      buildNamedExportLet({ NAME: t40.identifier(exportName), VALUE: value })
+      buildNamedExportLet({ NAME: t42.identifier(exportName), VALUE: value })
     );
   }
 }
 
 // src/unpack/webpack/getDefaultExport.ts
 import { expression as expression2 } from "@babel/template";
-import * as m44 from "@codemod/matchers";
+import * as m46 from "@codemod/matchers";
 function convertDefaultRequire(bundle) {
   function getRequiredModule(path) {
     const binding = path.scope.getBinding(moduleArg.current.name);
@@ -4114,20 +4257,20 @@ function convertDefaultRequire(bundle) {
       return bundle.modules.get(requiredModuleId.current.value.toString());
     }
   }
-  const requiredModuleId = m44.capture(m44.numericLiteral());
-  const declaratorMatcher = m44.variableDeclarator(
-    m44.identifier(),
-    m44.callExpression(m44.identifier("require"), [requiredModuleId])
+  const requiredModuleId = m46.capture(m46.numericLiteral());
+  const declaratorMatcher = m46.variableDeclarator(
+    m46.identifier(),
+    m46.callExpression(m46.identifier("require"), [requiredModuleId])
   );
-  const moduleArg = m44.capture(m44.identifier());
-  const getterVarName = m44.capture(m44.identifier());
-  const requireN = m44.callExpression(constMemberExpression("require", "n"), [
+  const moduleArg = m46.capture(m46.identifier());
+  const getterVarName = m46.capture(m46.identifier());
+  const requireN = m46.callExpression(constMemberExpression("require", "n"), [
     moduleArg
   ]);
-  const defaultRequireMatcher = m44.variableDeclarator(getterVarName, requireN);
-  const defaultRequireMatcherAlternative = m44.or(
+  const defaultRequireMatcher = m46.variableDeclarator(getterVarName, requireN);
+  const defaultRequireMatcherAlternative = m46.or(
     constMemberExpression(requireN, "a"),
-    m44.callExpression(requireN, [])
+    m46.callExpression(requireN, [])
   );
   const buildDefaultAccess = expression2`OBJECT.default`;
   bundle.modules.forEach((module3) => {
@@ -4170,20 +4313,20 @@ function convertDefaultRequire(bundle) {
 
 // src/unpack/webpack/varInjection.ts
 import { statement as statement4 } from "@babel/template";
-import * as m45 from "@codemod/matchers";
+import * as m47 from "@codemod/matchers";
 var buildVar = statement4`var NAME = INIT;`;
 function inlineVarInjections(module3) {
   const { program: program5 } = module3.ast;
   const newBody = [];
-  const body = m45.capture(m45.blockStatement());
-  const params = m45.capture(m45.arrayOf(m45.identifier()));
-  const args = m45.capture(
-    m45.anyList(m45.or(m45.thisExpression(), m45.identifier("exports")), m45.oneOrMore())
+  const body = m47.capture(m47.blockStatement());
+  const params = m47.capture(m47.arrayOf(m47.identifier()));
+  const args = m47.capture(
+    m47.anyList(m47.or(m47.thisExpression(), m47.identifier("exports")), m47.oneOrMore())
   );
-  const matcher16 = m45.expressionStatement(
-    m45.callExpression(
+  const matcher16 = m47.expressionStatement(
+    m47.callExpression(
       constMemberExpression(
-        m45.functionExpression(void 0, params, body),
+        m47.functionExpression(void 0, params, body),
         "call"
       ),
       args
@@ -4221,12 +4364,12 @@ var WebpackBundle = class extends Bundle {
    * Replaces `require(id)` calls with `require("./relative/path.js")` calls.
    */
   replaceRequirePaths() {
-    const requireId = m46.capture(m46.or(m46.numericLiteral(), m46.stringLiteral()));
-    const requireMatcher2 = m46.or(
-      m46.callExpression(m46.identifier("require"), [requireId])
+    const requireId = m48.capture(m48.or(m48.numericLiteral(), m48.stringLiteral()));
+    const requireMatcher2 = m48.or(
+      m48.callExpression(m48.identifier("require"), [requireId])
     );
-    const importId = m46.capture(m46.stringLiteral());
-    const importMatcher = m46.importDeclaration(m46.anything(), importId);
+    const importId = m48.capture(m48.stringLiteral());
+    const importMatcher = m48.importDeclaration(m48.anything(), importId);
     this.modules.forEach((module3) => {
       traverse_default(module3.ast, {
         "CallExpression|ImportDeclaration": (path) => {
@@ -4243,7 +4386,7 @@ var WebpackBundle = class extends Bundle {
           }
           const requiredModule = this.modules.get(moduleId);
           arg.replaceWith(
-            t41.stringLiteral(
+            t43.stringLiteral(
               relativePath(
                 module3.path,
                 requiredModule?.path ?? `./${moduleId}.js`
@@ -4261,35 +4404,35 @@ var WebpackBundle = class extends Bundle {
 };
 
 // src/unpack/webpack/common-matchers.ts
-import * as t42 from "@babel/types";
-import * as m47 from "@codemod/matchers";
+import * as t44 from "@babel/types";
+import * as m49 from "@codemod/matchers";
 function webpackRequireFunctionMatcher() {
-  const containerId = m47.capture(m47.identifier());
-  const webpackRequire = m47.capture(
-    m47.functionDeclaration(
-      m47.identifier(),
+  const containerId = m49.capture(m49.identifier());
+  const webpackRequire = m49.capture(
+    m49.functionDeclaration(
+      m49.identifier(),
       // __webpack_require__
-      [m47.identifier()],
+      [m49.identifier()],
       // moduleId
-      m47.blockStatement(
+      m49.blockStatement(
         anySubList(
-          m47.expressionStatement(
-            m47.callExpression(
-              m47.or(
+          m49.expressionStatement(
+            m49.callExpression(
+              m49.or(
                 // Example (webpack 0.11.x): __webpack_modules__[moduleId].call(null, module, module.exports, __webpack_require__);
                 // Example (webpack 4): __webpack_modules__[moduleId].call(module.exports, module, module.exports, __webpack_require__);
                 constMemberExpression(
-                  m47.memberExpression(
-                    m47.fromCapture(containerId),
-                    m47.identifier(),
+                  m49.memberExpression(
+                    m49.fromCapture(containerId),
+                    m49.identifier(),
                     true
                   ),
                   "call"
                 ),
                 // Example (webpack 5): __webpack_modules__[moduleId](module, module.exports, __webpack_require__);
-                m47.memberExpression(
-                  m47.fromCapture(containerId),
-                  m47.identifier(),
+                m49.memberExpression(
+                  m49.fromCapture(containerId),
+                  m49.identifier(),
                   true
                 )
               )
@@ -4302,18 +4445,18 @@ function webpackRequireFunctionMatcher() {
   return { webpackRequire, containerId };
 }
 function modulesContainerMatcher() {
-  return m47.capture(
-    m47.or(
-      m47.arrayExpression(m47.arrayOf(m47.or(anonymousFunction(), null))),
-      m47.objectExpression(
-        m47.arrayOf(
-          m47.or(
-            m47.objectProperty(
-              m47.or(m47.numericLiteral(), m47.stringLiteral(), m47.identifier()),
+  return m49.capture(
+    m49.or(
+      m49.arrayExpression(m49.arrayOf(m49.or(anonymousFunction(), null))),
+      m49.objectExpression(
+        m49.arrayOf(
+          m49.or(
+            m49.objectProperty(
+              m49.or(m49.numericLiteral(), m49.stringLiteral(), m49.identifier()),
               anonymousFunction()
             ),
             // Example (__webpack_public_path__): { c: "" }
-            m47.objectProperty(m47.identifier("c"), m47.stringLiteral())
+            m49.objectProperty(m49.identifier("c"), m49.stringLiteral())
           )
         )
       )
@@ -4322,7 +4465,7 @@ function modulesContainerMatcher() {
 }
 function getModuleFunctions(container) {
   const functions = /* @__PURE__ */ new Map();
-  if (t42.isArrayExpression(container.node)) {
+  if (t44.isArrayExpression(container.node)) {
     container.node.elements.forEach((element, index) => {
       if (element !== null) {
         functions.set(
@@ -4347,8 +4490,8 @@ function getModuleFunctions(container) {
   return functions;
 }
 function findAssignedEntryId(webpackRequireBinding) {
-  const entryId = m47.capture(m47.or(m47.numericLiteral(), m47.stringLiteral()));
-  const assignment = m47.assignmentExpression(
+  const entryId = m49.capture(m49.or(m49.numericLiteral(), m49.stringLiteral()));
+  const assignment = m49.assignmentExpression(
     "=",
     constMemberExpression(webpackRequireBinding.identifier.name, "s"),
     entryId
@@ -4360,9 +4503,9 @@ function findAssignedEntryId(webpackRequireBinding) {
   }
 }
 function findRequiredEntryId(webpackRequireBinding) {
-  const entryId = m47.capture(m47.or(m47.numericLiteral(), m47.stringLiteral()));
-  const call = m47.callExpression(
-    m47.identifier(webpackRequireBinding.identifier.name),
+  const entryId = m49.capture(m49.or(m49.numericLiteral(), m49.stringLiteral()));
+  const call = m49.callExpression(
+    m49.identifier(webpackRequireBinding.identifier.name),
     [entryId]
   );
   for (const reference of webpackRequireBinding.referencePaths) {
@@ -4384,11 +4527,11 @@ var unpack_webpack_4_default = {
   visitor(options = { bundle: void 0 }) {
     const { webpackRequire, containerId } = webpackRequireFunctionMatcher();
     const container = modulesContainerMatcher();
-    const matcher16 = m48.callExpression(
-      m48.functionExpression(
+    const matcher16 = m50.callExpression(
+      m50.functionExpression(
         null,
         [containerId],
-        m48.blockStatement(anySubList(webpackRequire))
+        m50.blockStatement(anySubList(webpackRequire))
       ),
       [container]
     );
@@ -4405,7 +4548,7 @@ var unpack_webpack_4_default = {
         for (const [id, func] of getModuleFunctions(containerPath)) {
           renameParameters(func, ["module", "exports", "require"]);
           const isEntry = id === entryId;
-          const file5 = t43.file(t43.program(func.node.body.body));
+          const file5 = t45.file(t45.program(func.node.body.body));
           const lastNode = file5.program.body.at(-1);
           if (lastNode?.trailingComments?.length === 1 && lastNode.trailingComments[0].value === "*") {
             lastNode.trailingComments = null;
@@ -4419,8 +4562,8 @@ var unpack_webpack_4_default = {
 };
 
 // src/unpack/webpack/unpack-webpack-5.ts
-import * as t44 from "@babel/types";
-import * as m49 from "@codemod/matchers";
+import * as t46 from "@babel/types";
+import * as m51 from "@codemod/matchers";
 var unpack_webpack_5_default = {
   name: "unpack-webpack-5",
   tags: ["unsafe"],
@@ -4428,11 +4571,11 @@ var unpack_webpack_5_default = {
   visitor(options = { bundle: void 0 }) {
     const { webpackRequire, containerId } = webpackRequireFunctionMatcher();
     const container = modulesContainerMatcher();
-    const matcher16 = m49.blockStatement(
+    const matcher16 = m51.blockStatement(
       anySubList(
         // Example: var __webpack_modules__ = { ... };
-        m49.variableDeclaration(void 0, [
-          m49.variableDeclarator(containerId, container)
+        m51.variableDeclaration(void 0, [
+          m51.variableDeclarator(containerId, container)
         ]),
         webpackRequire
       )
@@ -4452,7 +4595,7 @@ var unpack_webpack_5_default = {
         for (const [id, func] of getModuleFunctions(containerPath)) {
           renameParameters(func, ["module", "exports", "require"]);
           const isEntry = id === entryId;
-          const file5 = t44.file(t44.program(func.node.body.body));
+          const file5 = t46.file(t46.program(func.node.body.body));
           modules.set(id, new WebpackModule(id, file5, isEntry));
         }
         options.bundle = new WebpackBundle(entryId ?? "", modules);
@@ -4462,43 +4605,43 @@ var unpack_webpack_5_default = {
 };
 
 // src/unpack/webpack/unpack-webpack-chunk.ts
-import * as t45 from "@babel/types";
-import * as m50 from "@codemod/matchers";
+import * as t47 from "@babel/types";
+import * as m52 from "@codemod/matchers";
 var unpack_webpack_chunk_default = {
   name: "unpack-webpack-chunk",
   tags: ["unsafe"],
   scope: true,
   visitor(options = { bundle: void 0 }) {
     const container = modulesContainerMatcher();
-    const jsonpGlobal = m50.capture(
+    const jsonpGlobal = m52.capture(
       constMemberExpression(
-        m50.or(m50.identifier(), m50.thisExpression()),
-        m50.matcher((property) => property.startsWith("webpack"))
+        m52.or(m52.identifier(), m52.thisExpression()),
+        m52.matcher((property) => property.startsWith("webpack"))
       )
     );
-    const chunkIds = m50.capture(
-      m50.arrayOf(m50.or(m50.numericLiteral(), m50.stringLiteral()))
+    const chunkIds = m52.capture(
+      m52.arrayOf(m52.or(m52.numericLiteral(), m52.stringLiteral()))
     );
-    const matcher16 = m50.callExpression(
+    const matcher16 = m52.callExpression(
       constMemberExpression(
-        m50.assignmentExpression(
+        m52.assignmentExpression(
           "=",
           jsonpGlobal,
-          m50.logicalExpression(
+          m52.logicalExpression(
             "||",
-            m50.fromCapture(jsonpGlobal),
-            m50.arrayExpression([])
+            m52.fromCapture(jsonpGlobal),
+            m52.arrayExpression([])
           )
         ),
         "push"
       ),
       [
-        m50.arrayExpression(
-          m50.anyList(
-            m50.arrayExpression(chunkIds),
+        m52.arrayExpression(
+          m52.anyList(
+            m52.arrayExpression(chunkIds),
             container,
             // optional entry point like [["57iH",19,24,25]] or a function
-            m50.zeroOrMore()
+            m52.zeroOrMore()
           )
         )
       ]
@@ -4514,7 +4657,7 @@ var unpack_webpack_chunk_default = {
         for (const [id, func] of getModuleFunctions(containerPath)) {
           renameParameters(func, ["module", "exports", "require"]);
           const isEntry = false;
-          const file5 = t45.file(t45.program(func.node.body.body));
+          const file5 = t47.file(t47.program(func.node.body.body));
           modules.set(id, new WebpackModule(id, file5, isEntry));
         }
         options.bundle = new WebpackBundle("", modules);
@@ -4547,7 +4690,7 @@ function isBrowser() {
 }
 
 // src/deobfuscate/var-transformation.ts
-import * as t46 from "@babel/types";
+import * as t48 from "@babel/types";
 
 // src/index.ts
 function mergeOptions(options) {
@@ -4629,7 +4772,7 @@ async function webcrack(code, options = {}) {
     () => outputCode = generate(ast),
     // Unpacking modifies the same AST and may result in imports not at top level
     // so the code has to be generated before
-    options.unpack && (() => bundle = unpackAST(ast, options.mappings(m51))),
+    options.unpack && (() => bundle = unpackAST(ast, options.mappings(m53))),
     plugins.unpack && (() => plugins.unpack(ast))
   ].filter(Boolean);
   for (let i = 0; i < stages2.length; i++) {

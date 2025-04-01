@@ -40,7 +40,7 @@ export async function updateVercelSecurity() {
     files.push({
       file: "challenge.js",
       buffer: Buffer.from(cleaned)
-    })
+    });
   }
 
   for (const file of assets) {
@@ -54,8 +54,16 @@ export async function updateVercelSecurity() {
       const text = buffer.toString("utf-8");
       const cleaned = await cleanJavascript(text);
       files.push({ file, buffer: Buffer.from(cleaned) });
+    } else if (file.endsWith(".wasm")) {
+      files.push({ file, buffer });
+      // get all strings
+      const strings = Array.from(buffer.toString("ascii").matchAll(/[\x20-\x7E\xA0-\xFF]{7,}/g));
+      files.push({
+        file: `${file}.strings`,
+        buffer: Buffer.from(strings.join("\n")),
+      })
     } else {
-      files.push({ file, buffer: buffer });
+      files.push({ file, buffer });
     }
   }
 

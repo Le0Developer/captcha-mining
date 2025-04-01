@@ -25,7 +25,7 @@ export async function updateBunnyShield() {
       await alert(`Failed to fetch ${file}: ${res.status} ${text}`);
       continue;
     }
-    if(file.endsWith(".js")) {
+    if (file.endsWith(".js")) {
       const cleaned = await cleanJavascript(text, false);
       files.push({ file, text: cleaned });
     } else {
@@ -42,7 +42,7 @@ export async function updateBunnyShield() {
     offset += bytes.length + 1;
   }
 
-  const version = Buffer.from(new Uint8Array(await crypto.subtle.digest("SHA-256", fullBytes))).toHex().slice(0, 16);
+  const version = Buffer.from(new Uint8Array(await crypto.subtle.digest("SHA-256", fullBytes))).toString("hex").slice(0, 16);
   console.log(`Bunny Shield version: ${version}`);
 
   const versionDir = path.join(dir, "archive", version);
@@ -55,7 +55,7 @@ export async function updateBunnyShield() {
   await fs.ensureDir(versionDir);
   await fs.ensureDir(current);
 
-  for(const { file, text } of files) {
+  for (const { file, text } of files) {
     await fs.writeFile(path.join(versionDir, file), text);
     await fs.writeFile(path.join(current, file), text);
   }

@@ -16,7 +16,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v3
 
-    - uses: oven-sh/setup-bun@v2
+    - uses: actions/setup-node@v4
 
     - name: Set up Git
       run: |
@@ -26,8 +26,8 @@ jobs:
     - name: Download data
       run: |
         cd scripts
-        bun i
-        bun run src/index.ts
+        npm i
+        npx -y tsx src/index.ts
 
       env:
         DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}

@@ -13,6 +13,10 @@
     "@babel/parser": "^7.26.9",
     "@codemod/matchers": "^1.7.1",
     "fs-extra": "^11.3.0",
+    "isolated-vm": "^5.0.4",
     "simple-git": "^3.27.0"
-  }
+  },
+  "trustedDependencies": [
+    "isolated-vm"
+  ]
 }

@@ -5,6 +5,8 @@ import { alert, notify } from "./lib/notifications";
 import fs from "fs-extra";
 import { tryAndPush } from "./lib/git";
 import { cleanJavascript } from "./lib/clean";
+import { load } from "cheerio";
+import beautify from "js-beautify";
 
 const dir = path.resolve("../vercel-security");
 await fs.ensureDir(dir);
@@ -19,6 +21,28 @@ export async function updateVercelSecurity() {
     file: string;
     buffer: Buffer;
   }> = [];
+  {
+    const res = await fetch("https://nextjs-boilerplate-kappa-puce-85.vercel.app/");
+    const text = await res.text();
+    const $ = load(text);
+
+    const script = $("script");
+    const scriptContent = script.text()
+      .replace(/\="2\.\d+\.60\.[^"]*"/, `="<token>"`);
+    script.remove();
+
+    files.push({
+      file: "challenge.html",
+      buffer: Buffer.from(beautify.html($.html().replace(/\w+::\d+-\w+/g, "<request id>"))),
+    });
+
+    const cleaned = await cleanJavascript(scriptContent);
+    files.push({
+      file: "challenge.js",
+      buffer: Buffer.from(cleaned)
+    })
+  }
+
   for (const file of assets) {
     const res = await fetch(`https:///vercel.com/.well-known/vercel/security/static/${file}`);
     const buffer = Buffer.from(await res.arrayBuffer());

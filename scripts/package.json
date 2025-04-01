@@ -4,7 +4,8 @@
   "type": "module",
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/fs-extra": "^11.0.4"
+    "@types/fs-extra": "^11.0.4",
+    "@types/js-beautify": "^1.14.3"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
@@ -12,8 +13,10 @@
   "dependencies": {
     "@babel/parser": "^7.26.9",
     "@codemod/matchers": "^1.7.1",
+    "cheerio": "^1.0.0",
     "fs-extra": "^11.3.0",
     "isolated-vm": "^5.0.4",
+    "js-beautify": "^1.15.4",
     "simple-git": "^3.27.0"
   },
   "trustedDependencies": [

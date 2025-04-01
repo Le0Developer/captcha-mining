@@ -85,9 +85,9 @@ export async function updateVercelSecurity() {
     await fs.writeFile(path.join(current, file), buffer);
   }
 
-  const url = await tryAndPush(assets.map((name) => [
-    path.join(current, name),
-    path.join(versionDir, name),
+  const url = await tryAndPush(files.map(({ file }) => [
+    path.join(current, file),
+    path.join(versionDir, file),
   ]).flat(), `Vercel Security version: ${version}`);
 
   await notify(`Vercel Security updated to version ${version}: ${url}`);

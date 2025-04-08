@@ -43,7 +43,7 @@ export async function updateAWSWAF() {
   await fs.writeFile(path.join(current, "challenge.clean.js"), cleaned);
 
   const url = await tryAndPush([
-    path.join(versionDir, version, "*.js"),
+    path.join(versionDir, "*.js"),
     path.join(current, "*.js"),
   ], `AWS-WAF version ${version}`);
 

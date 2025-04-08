@@ -43,7 +43,7 @@ export async function updateTurnstile() {
   await fs.writeFile(path.join(current, "api.clean.js"), cleaned);
 
   const url = await tryAndPush([
-    path.join(versionDir, version, "*.js"),
+    path.join(versionDir, "*.js"),
     path.join(current, "*.js"),
   ], `Turnstile version ${version}`);
 

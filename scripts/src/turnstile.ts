@@ -43,9 +43,9 @@ export async function updateTurnstile() {
   await fs.writeFile(path.join(current, "api.clean.js"), cleaned);
 
   const url = await tryAndPush([
-    path.join("turnstile", "archive", version, "*.js"),
-    path.join("turnstile", "current", "*.js"),
-  ], `Turnstile version ${version}`)
+    path.join(versionDir, version, "*.js"),
+    path.join(current, "*.js"),
+  ], `Turnstile version ${version}`);
 
   await notify(`Updated Turnstile version ${version}: ${url}`);
 }

@@ -10,16 +10,17 @@ const dir = path.resolve("../bunny-shield");
 await fs.ensureDir(dir);
 
 const assets = [
-  "shield-challenge.js",
-  "shield-worker.js",
-  "challenge-styles.css",
-  "challenge.svg",
-]
+  "assets/shield-challenge.js",
+  "assets/shield-worker.js",
+  "assets/challenge-styles.css",
+  "assets/challenge.svg",
+  "bd/bunnyprint.js",
+];
 
 export async function updateBunnyShield() {
   const files = [];
   for (const file of assets) {
-    const res = await fetch(`https://www.bunny.net/.bunny-shield/assets/${file}`);
+    const res = await fetch(`https://www.bunny.net/.bunny-shield/${file}`);
     const text = await res.text();
     if (!res.ok) {
       await alert(`Failed to fetch ${file}: ${res.status} ${text}`);
@@ -33,7 +34,9 @@ export async function updateBunnyShield() {
     }
   }
 
-  const fullBytes = new Uint8Array(files.reduce((acc, { text }) => acc + text.length, 0) + files.length);
+  const fullBytes = new Uint8Array(
+    files.reduce((acc, { text }) => acc + text.length, 0) + files.length,
+  );
   let offset = 0;
   for (const { text } of files) {
     const bytes = new TextEncoder().encode(text);
@@ -42,12 +45,16 @@ export async function updateBunnyShield() {
     offset += bytes.length + 1;
   }
 
-  const version = Buffer.from(new Uint8Array(await crypto.subtle.digest("SHA-256", fullBytes))).toString("hex").slice(0, 16);
+  const version = Buffer.from(
+    new Uint8Array(await crypto.subtle.digest("SHA-256", fullBytes)),
+  )
+    .toString("hex")
+    .slice(0, 16);
   console.log(`Bunny Shield version: ${version}`);
 
   const versionDir = path.join(dir, "archive", version);
   const current = path.join(dir, "current");
-  if (await fs.pathExists(versionDir) && await fs.pathExists(current)) {
+  if ((await fs.pathExists(versionDir)) && (await fs.pathExists(current))) {
     console.log("Already got this version");
     return;
   }
@@ -60,11 +67,12 @@ export async function updateBunnyShield() {
     await fs.writeFile(path.join(current, file), text);
   }
 
-  const url = await tryAndPush(assets.map((name) => [
-    path.join(current, name),
-    path.join(versionDir, name),
-  ]).flat(), `Bunny Shield version: ${version}`);
+  const url = await tryAndPush(
+    assets
+      .map((name) => [path.join(current, name), path.join(versionDir, name)])
+      .flat(),
+    `Bunny Shield version: ${version}`,
+  );
 
   await notify(`Bunny Shield updated to version ${version}: ${url}`);
 }
-

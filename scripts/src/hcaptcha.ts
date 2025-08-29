@@ -49,7 +49,7 @@ async function updateHCaptchaAssets(): Promise<string | undefined> {
   const current = path.join(dir, "current");
   if ((await fs.pathExists(versionDir)) && (await fs.pathExists(current))) {
     console.log("Already got this version");
-    return;
+    return version;
   }
 
   const cleaned = await cleanJavascript(text);

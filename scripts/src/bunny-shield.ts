@@ -63,8 +63,12 @@ export async function updateBunnyShield() {
   await fs.ensureDir(current);
 
   for (const { file, text } of files) {
-    await fs.writeFile(path.join(versionDir, file), text);
-    await fs.writeFile(path.join(current, file), text);
+    const versionFile = path.join(versionDir, file);
+    await fs.ensureDir(path.dirname(versionFile));
+    await fs.writeFile(versionFile, text);
+    const currentFile = path.join(current, file);
+    await fs.ensureDir(path.dirname(currentFile));
+    await fs.writeFile(currentFile, text);
   }
 
   const url = await tryAndPush(

@@ -4,6 +4,7 @@ on:
   schedule:
     - cron: "22 * * * *"
   workflow_dispatch:
+  push:
 
 permissions:
   contents: write
@@ -11,6 +12,7 @@ permissions:
 jobs:
   download_and_push:
     runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.actor != 'github-actions[bot]'
 
     steps:
     - name: Checkout repository

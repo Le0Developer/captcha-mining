@@ -151,7 +151,7 @@ async function updateHCaptchaHS(version: string) {
     }
     result.push(`${path.basename(url)}`, text);
 
-    const cleaned = await cleanJavascript(text);
+    const cleaned = await cleanJavascript(text, false);
     result.push(`${path.basename(url, ".js")}.clean.js`, cleaned);
   }
 

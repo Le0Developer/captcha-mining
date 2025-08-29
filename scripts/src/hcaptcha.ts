@@ -132,6 +132,13 @@ async function updateHCaptchaHS(version: string) {
 
   const payload = JSON.parse(atob(data.c.req.split(".")[1]));
   const base = payload.l;
+  const hsVersion = base.split("/").pop();
+  const hsDir = path.join(dir, "archive", hsVersion);
+
+  if (await fs.pathExists(hsDir)) {
+    console.log("Already got this HS version");
+    return;
+  }
 
   for (const endpoint of hs) {
     const url = endpoint.replace("%s", base);
@@ -143,11 +150,11 @@ async function updateHCaptchaHS(version: string) {
       continue;
     }
     result.push(`${path.basename(url)}`, text);
+
+    const cleaned = await cleanJavascript(text);
+    result.push(`${path.basename(url, ".js")}.clean.js`, cleaned);
   }
 
-  const hsVersion = base.split("/").pop();
-
-  const hsDir = path.join(dir, "archive", hsVersion);
   const current = path.join(dir, "current");
   await fs.ensureDir(hsDir);
   await fs.ensureDir(current);

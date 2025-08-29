@@ -12,5 +12,8 @@ try {
   await updateVercelSecurity();
   await updateAWSWAF();
 } catch (err) {
-  await alert(`Error in main execution: ${err}`);
+  await alert(
+    `Error in main execution: ${err instanceof Error ? err.stack : err}`,
+  );
+  throw err;
 }

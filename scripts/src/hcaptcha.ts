@@ -103,9 +103,9 @@ async function updateHCaptchaAssets(): Promise<string | undefined> {
 }
 
 const hs = [
-  "https://newassets.hcaptcha.com/%s/hsw.js",
-  "https://newassets.hcaptcha.com/%s/hsl.js",
-  "https://newassets.hcaptcha.com/%s/hsj.js",
+  "https://newassets.hcaptcha.com%s/hsw.js",
+  "https://newassets.hcaptcha.com%s/hsl.js",
+  "https://newassets.hcaptcha.com%s/hsj.js",
 ];
 
 async function updateHCaptchaHS(version: string) {

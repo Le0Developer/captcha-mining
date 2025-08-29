@@ -626,91 +626,168 @@ function findArrayRotator(stringArray) {
   }
 }
 
-// src/deobfuscate/control-flow-object.ts
+// src/deobfuscate/constant-array.ts
 import * as t5 from "@babel/types";
 import * as m6 from "@codemod/matchers";
+var constant_array_default = {
+  name: "constant-array",
+  tags: ["unsafe"],
+  scope: true,
+  visitor() {
+    const arrayIdentifier = m6.capture(m6.identifier());
+    const arrayExpression12 = m6.capture(
+      m6.or(
+        // ["hello", "world"]
+        m6.arrayExpression(
+          m6.arrayOf(
+            m6.or(
+              m6.stringLiteral(),
+              m6.numericLiteral(),
+              m6.nullLiteral(),
+              m6.regExpLiteral(),
+              undefinedMatcher
+            )
+          )
+        ),
+        // "hello,world".split(",")
+        m6.callExpression(constMemberExpression(m6.stringLiteral(), "split"), [
+          m6.stringLiteral()
+        ])
+      )
+    );
+    const variableDeclaration16 = declaratorOrAssignmentExpression(
+      arrayIdentifier,
+      arrayExpression12
+    );
+    function getArray() {
+      const current = arrayExpression12.current;
+      if (current.type === "ArrayExpression") {
+        return current;
+      }
+      const split = current.arguments[0];
+      const content = current.callee.object;
+      const elements = content.value.split(split.value).map((v) => t5.stringLiteral(v));
+      return t5.arrayExpression(elements);
+    }
+    function inline(path) {
+      if (!variableDeclaration16.match(path.node)) return 0;
+      const array = getArray();
+      const length = array.elements.length;
+      const binding = path.scope.getBinding(arrayIdentifier.current.name);
+      const memberAccess = m6.memberExpression(
+        m6.fromCapture(arrayIdentifier),
+        m6.numericLiteral(m6.matcher((value) => value < length))
+      );
+      if (!binding.referenced || !isReadonlyObject(binding, memberAccess))
+        return 0;
+      inlineArrayElements(array, binding.referencePaths);
+      path.remove();
+      return 1;
+    }
+    return {
+      // Simple string array inlining (only `array[0]`, `array[1]` etc references, no rotating/decoding).
+      AssignmentExpression: {
+        exit(path) {
+          this.changes += inline(path);
+        }
+      },
+      VariableDeclarator: {
+        exit(path) {
+          this.changes += inline(path);
+        }
+      }
+    };
+  }
+};
+
+// src/deobfuscate/control-flow-object.ts
+import * as t6 from "@babel/types";
+import * as m7 from "@codemod/matchers";
 var control_flow_object_default = {
   name: "control-flow-object",
   tags: ["safe"],
   scope: true,
   visitor() {
-    const varId = m6.capture(m6.identifier());
-    const propertyName = m6.matcher((name) => /^[a-z]{5}$/i.test(name));
+    const varId = m7.capture(m7.identifier());
+    const propertyName = m7.matcher(
+      (name) => /^[a-z\d]{1,5}$/i.test(name)
+    );
     const propertyKey = constKey(propertyName);
-    const propertyValue = m6.or(
+    const propertyValue = m7.or(
+      m7.numericLiteral(),
       // E.g. "6|0|4|3|1|5|2"
-      m6.stringLiteral(),
+      m7.stringLiteral(),
       // E.g. function (a, b) { return a + b }
-      m6.matcher((node) => {
-        return t5.isFunctionExpression(node) && node.params.length >= 2 && createFunctionMatcher(node.params.length, (left, right) => [
-          m6.returnStatement(
-            m6.or(
-              m6.binaryExpression(void 0, left, right),
-              m6.logicalExpression(void 0, left, right),
-              m6.binaryExpression(void 0, right, left),
-              m6.logicalExpression(void 0, right, left)
+      m7.matcher((node) => {
+        return t6.isFunctionExpression(node) && node.params.length >= 2 && createFunctionMatcher(node.params.length, (left, right) => [
+          m7.returnStatement(
+            m7.or(
+              m7.binaryExpression(void 0, left, right),
+              m7.logicalExpression(void 0, left, right),
+              m7.binaryExpression(void 0, right, left),
+              m7.logicalExpression(void 0, right, left)
             )
           )
         ]).match(node);
       }),
       // E.g. function (a, b, c) { return a(b, c) } with an arbitrary number of arguments
-      m6.matcher((node) => {
-        return t5.isFunctionExpression(node) && createFunctionMatcher(node.params.length, (...params) => [
-          m6.returnStatement(m6.callExpression(params[0], params.slice(1)))
+      m7.matcher((node) => {
+        return t6.isFunctionExpression(node) && createFunctionMatcher(node.params.length, (...params) => [
+          m7.returnStatement(m7.callExpression(params[0], params.slice(1)))
         ]).match(node);
       }),
       // E.g. function (a, ...b) { return a(...b) }
       (() => {
-        const fnName = m6.capture(m6.identifier());
-        const restName = m6.capture(m6.identifier());
-        return m6.functionExpression(
+        const fnName = m7.capture(m7.identifier());
+        const restName = m7.capture(m7.identifier());
+        return m7.functionExpression(
           void 0,
-          [fnName, m6.restElement(restName)],
-          m6.blockStatement([
-            m6.returnStatement(
-              m6.callExpression(m6.fromCapture(fnName), [
-                m6.spreadElement(m6.fromCapture(restName))
+          [fnName, m7.restElement(restName)],
+          m7.blockStatement([
+            m7.returnStatement(
+              m7.callExpression(m7.fromCapture(fnName), [
+                m7.spreadElement(m7.fromCapture(restName))
               ])
             )
           ])
         );
       })()
     );
-    const objectProperties = m6.capture(
-      m6.arrayOf(m6.objectProperty(propertyKey, propertyValue))
+    const objectProperties = m7.capture(
+      m7.arrayOf(m7.objectProperty(propertyKey, propertyValue))
     );
-    const aliasId = m6.capture(m6.identifier());
-    const aliasVar = declarationOrAssignment(aliasId, m6.fromCapture(varId));
-    const assignedKey = m6.capture(propertyName);
-    const assignedValue = m6.capture(propertyValue);
-    const assignment = m6.expressionStatement(
-      m6.assignmentExpression(
+    const aliasId = m7.capture(m7.identifier());
+    const aliasVar = declarationOrAssignment(aliasId, m7.fromCapture(varId));
+    const assignedKey = m7.capture(propertyName);
+    const assignedValue = m7.capture(propertyValue);
+    const assignment = m7.expressionStatement(
+      m7.assignmentExpression(
         "=",
-        constMemberExpression(m6.fromCapture(varId), assignedKey),
+        constMemberExpression(m7.fromCapture(varId), assignedKey),
         assignedValue
       )
     );
-    const looseAssignment = m6.expressionStatement(
-      m6.assignmentExpression(
+    const looseAssignment = m7.expressionStatement(
+      m7.assignmentExpression(
         "=",
-        constMemberExpression(m6.fromCapture(varId), assignedKey)
+        constMemberExpression(m7.fromCapture(varId), assignedKey)
       )
     );
     const memberAccess = constMemberExpression(
-      m6.or(m6.fromCapture(varId), m6.fromCapture(aliasId)),
+      m7.or(m7.fromCapture(varId), m7.fromCapture(aliasId)),
       propertyName
     );
     const varMatcher = declaratorOrAssignmentExpression(
       varId,
-      m6.objectExpression(objectProperties)
+      m7.objectExpression(objectProperties)
     );
     const inlineMatcher = constMemberExpression(
-      m6.objectExpression(objectProperties),
+      m7.objectExpression(objectProperties),
       propertyName
     );
     function transform(path) {
       let changes = 0;
-      if (varMatcher.match(path.node)) {
+      if (varMatcher.match(path.node) && path.scope) {
         const binding = path.scope.getBinding(varId.current.name);
         if (!binding) return changes;
         if (!isConstantBinding(binding)) return changes;
@@ -737,7 +814,7 @@ var control_flow_object_default = {
             ref.addComment("leading", "webcrack:control_flow_missing_prop");
             return;
           }
-          if (t5.isStringLiteral(value)) {
+          if (t6.isStringLiteral(value) || t6.isNumericLiteral(value)) {
             memberPath.replaceWith(value);
           } else {
             inlineFunctionCall(
@@ -748,7 +825,7 @@ var control_flow_object_default = {
           changes++;
         });
         oldRefs.forEach((ref) => {
-          const varDeclarator = findParent(ref, m6.variableDeclarator());
+          const varDeclarator = findParent(ref, m7.variableDeclarator());
           if (varDeclarator) changes += transform(varDeclarator);
         });
         if (!failed) path.remove();
@@ -768,8 +845,8 @@ var control_flow_object_default = {
         }
         if (assignment.match(statement5)) {
           properties.push(
-            t5.objectProperty(
-              t5.identifier(assignedKey.current),
+            t6.objectProperty(
+              t6.identifier(assignedKey.current),
               assignedValue.current
             )
           );
@@ -809,7 +886,7 @@ var control_flow_object_default = {
             (prop) => getPropName(prop.key) === propName
           )?.value;
           if (!value) return;
-          if (t5.isStringLiteral(value)) {
+          if (t6.isStringLiteral(value)) {
             path.replaceWith(value);
           } else if (path.parentPath.isCallExpression()) {
             inlineFunctionCall(value, path.parentPath);
@@ -824,56 +901,56 @@ var control_flow_object_default = {
 };
 
 // src/deobfuscate/control-flow-switch.ts
-import * as t6 from "@babel/types";
-import * as m7 from "@codemod/matchers";
+import * as t7 from "@babel/types";
+import * as m8 from "@codemod/matchers";
 var control_flow_switch_default = {
   name: "control-flow-switch",
   tags: ["safe"],
   visitor() {
-    const sequenceName = m7.capture(m7.identifier());
-    const sequenceString = m7.capture(
-      m7.matcher((s) => /^\d+(\|\d+)*$/.test(s))
+    const sequenceName = m8.capture(m8.identifier());
+    const sequenceString = m8.capture(
+      m8.matcher((s) => /^\d+(\|\d+)*$/.test(s))
     );
-    const iterator = m7.capture(m7.identifier());
-    const assignment = m7.capture(
+    const iterator = m8.capture(m8.identifier());
+    const assignment = m8.capture(
       declarationOrAssignment(
         sequenceName,
-        m7.callExpression(
-          constMemberExpression(m7.stringLiteral(sequenceString), "split"),
-          [m7.stringLiteral("|")]
+        m8.callExpression(
+          constMemberExpression(m8.stringLiteral(sequenceString), "split"),
+          [m8.stringLiteral("|")]
         )
       )
     );
-    const cases = m7.capture(
-      m7.arrayOf(
-        m7.switchCase(
-          m7.stringLiteral(m7.matcher((s) => /^\d+$/.test(s))),
-          m7.zeroOrMore()
+    const cases = m8.capture(
+      m8.arrayOf(
+        m8.switchCase(
+          m8.stringLiteral(m8.matcher((s) => /^\d+$/.test(s))),
+          m8.zeroOrMore()
         )
       )
     );
-    const matcher17 = m7.blockStatement(
-      m7.anyList(
-        m7.zeroOrMore(),
+    const matcher17 = m8.blockStatement(
+      m8.anyList(
+        m8.zeroOrMore(),
         // E.g. const sequence = "2|4|3|0|1".split("|")
         assignment,
         // E.g. let iterator = 0 or -0x1a70 + 0x93d + 0x275 * 0x7
-        declarationOrAssignment(iterator, m7.anything()),
+        declarationOrAssignment(iterator, m8.anything()),
         infiniteLoop(
-          m7.blockStatement([
-            m7.switchStatement(
+          m8.blockStatement([
+            m8.switchStatement(
               // E.g. switch (sequence[iterator++]) {
-              m7.memberExpression(
-                m7.fromCapture(sequenceName),
-                m7.updateExpression("++", m7.fromCapture(iterator)),
+              m8.memberExpression(
+                m8.fromCapture(sequenceName),
+                m8.updateExpression("++", m8.fromCapture(iterator)),
                 true
               ),
               cases
             ),
-            m7.breakStatement()
+            m8.breakStatement()
           ])
         ),
-        m7.zeroOrMore()
+        m8.zeroOrMore()
       )
     );
     return {
@@ -881,11 +958,11 @@ var control_flow_switch_default = {
         exit(path) {
           if (!matcher17.match(path.node)) return;
           let heading = 0;
-          for (; path.node.body[heading] !== assignment.current && heading < path.node.body.length; heading++);
+          for (; path.node.body[heading] !== assignment.current && heading < path.node.body.length; heading++) ;
           const caseStatements = new Map(
             cases.current.map((c) => [
               c.test.value,
-              t6.isContinueStatement(c.consequent.at(-1)) ? c.consequent.slice(0, -1) : c.consequent
+              t7.isContinueStatement(c.consequent.at(-1)) ? c.consequent.slice(0, -1) : c.consequent
             ])
           );
           const sequence = sequenceString.current.split("|");
@@ -899,21 +976,21 @@ var control_flow_switch_default = {
 };
 
 // src/deobfuscate/dead-code.ts
-import * as t7 from "@babel/types";
-import * as m8 from "@codemod/matchers";
+import * as t8 from "@babel/types";
+import * as m9 from "@codemod/matchers";
 var dead_code_default = {
   name: "dead-code",
   tags: ["unsafe"],
   scope: true,
   visitor() {
-    const stringComparison = m8.binaryExpression(
-      m8.or("===", "==", "!==", "!="),
-      m8.stringLiteral(),
-      m8.stringLiteral()
+    const stringComparison = m9.binaryExpression(
+      m9.or("===", "==", "!==", "!="),
+      m9.stringLiteral(),
+      m9.stringLiteral()
     );
-    const testMatcher = m8.or(
+    const testMatcher = m9.or(
       stringComparison,
-      m8.unaryExpression("!", stringComparison)
+      m9.unaryExpression("!", stringComparison)
     );
     return {
       "IfStatement|ConditionalExpression": {
@@ -934,7 +1011,7 @@ var dead_code_default = {
   }
 };
 function replace(path, replacement) {
-  if (t7.isBlockStatement(replacement.node)) {
+  if (t8.isBlockStatement(replacement.node)) {
     const childBindings = replacement.scope.bindings;
     for (const name in childBindings) {
       const binding = childBindings[name];
@@ -952,7 +1029,7 @@ function replace(path, replacement) {
 
 // src/deobfuscate/decoder.ts
 import { expression } from "@babel/template";
-import * as m9 from "@codemod/matchers";
+import * as m10 from "@codemod/matchers";
 var Decoder = class {
   originalName;
   name;
@@ -964,29 +1041,29 @@ var Decoder = class {
   }
   collectCalls() {
     const calls = [];
-    const literalArgument = m9.or(
-      m9.binaryExpression(
-        m9.anything(),
-        m9.matcher((node) => literalArgument.match(node)),
-        m9.matcher((node) => literalArgument.match(node))
+    const literalArgument = m10.or(
+      m10.binaryExpression(
+        m10.anything(),
+        m10.matcher((node) => literalArgument.match(node)),
+        m10.matcher((node) => literalArgument.match(node))
       ),
-      m9.unaryExpression(
+      m10.unaryExpression(
         "-",
-        m9.matcher((node) => literalArgument.match(node))
+        m10.matcher((node) => literalArgument.match(node))
       ),
-      m9.numericLiteral(),
-      m9.stringLiteral()
+      m10.numericLiteral(),
+      m10.stringLiteral()
     );
-    const literalCall = m9.callExpression(
-      m9.identifier(this.name),
-      m9.arrayOf(literalArgument)
+    const literalCall = m10.callExpression(
+      m10.identifier(this.name),
+      m10.arrayOf(literalArgument)
     );
-    const expressionCall = m9.callExpression(
-      m9.identifier(this.name),
-      m9.arrayOf(m9.anyExpression())
+    const expressionCall = m10.callExpression(
+      m10.identifier(this.name),
+      m10.arrayOf(m10.anyExpression())
     );
-    const conditional = m9.capture(m9.conditionalExpression());
-    const conditionalCall = m9.callExpression(m9.identifier(this.name), [
+    const conditional = m10.capture(m10.conditionalExpression());
+    const conditionalCall = m10.callExpression(m10.identifier(this.name), [
       conditional
     ]);
     const buildExtractedConditional = expression`TEST ? CALLEE(CONSEQUENT) : CALLEE(ALTERNATE)`;
@@ -1024,29 +1101,29 @@ var Decoder = class {
 };
 function findDecoders(stringArray) {
   const decoders = [];
-  const functionName = m9.capture(m9.anyString());
-  const arrayIdentifier = m9.capture(m9.identifier());
-  const matcher17 = m9.functionDeclaration(
-    m9.identifier(functionName),
-    m9.anything(),
-    m9.blockStatement(
-      m9.or(
+  const functionName = m10.capture(m10.anyString());
+  const arrayIdentifier = m10.capture(m10.identifier());
+  const matcher17 = m10.functionDeclaration(
+    m10.identifier(functionName),
+    m10.anything(),
+    m10.blockStatement(
+      m10.or(
         anySubList(
           // var array = getStringArray();
           declarationOrAssignment(
             arrayIdentifier,
-            m9.callExpression(m9.identifier(stringArray.name))
+            m10.callExpression(m10.identifier(stringArray.name))
           ),
           // var h = array[e]; return h;
           // or return array[e -= 254];
-          m9.containerOf(
-            m9.memberExpression(m9.fromCapture(arrayIdentifier), void 0, true)
+          m10.containerOf(
+            m10.memberExpression(m10.fromCapture(arrayIdentifier), void 0, true)
           )
         ),
         anySubList(
           // var h = stringArray[e]; return h;
-          m9.containerOf(
-            m9.memberExpression(m9.identifier(stringArray.name), void 0, true)
+          m10.containerOf(
+            m10.memberExpression(m10.identifier(stringArray.name), void 0, true)
           )
         )
       )
@@ -1066,7 +1143,7 @@ function findDecoders(stringArray) {
 }
 
 // src/deobfuscate/inline-decoded-strings.ts
-import * as t8 from "@babel/types";
+import * as t9 from "@babel/types";
 var inline_decoded_strings_default = {
   name: "inline-decoded-strings",
   tags: ["unsafe"],
@@ -1080,7 +1157,7 @@ var inline_decoded_strings_default = {
     for (let i = 0; i < calls.length; i++) {
       const call = calls[i];
       const value = decodedValues[i];
-      call.replaceWith(t8.valueToNode(value));
+      call.replaceWith(t9.valueToNode(value));
       if (typeof value !== "string")
         call.addComment("leading", "webcrack:decode_error");
     }
@@ -1105,35 +1182,35 @@ var inline_decoder_wrappers_default = {
 };
 
 // src/deobfuscate/inline-object-props.ts
-import * as m10 from "@codemod/matchers";
+import * as m11 from "@codemod/matchers";
 var inline_object_props_default = {
   name: "inline-object-props",
   tags: ["safe"],
   scope: true,
   visitor() {
-    const varId = m10.capture(m10.identifier());
-    const propertyName = m10.capture(
-      m10.matcher((name) => /^[\w]+$/i.test(name))
+    const varId = m11.capture(m11.identifier());
+    const propertyName = m11.capture(
+      m11.matcher((name) => /^[\w]+$/i.test(name))
     );
     const propertyKey = constKey(propertyName);
-    const objectProperties = m10.capture(
-      m10.arrayOf(
-        m10.objectProperty(
+    const objectProperties = m11.capture(
+      m11.arrayOf(
+        m11.objectProperty(
           propertyKey,
-          m10.or(m10.stringLiteral(), m10.numericLiteral())
+          m11.or(m11.stringLiteral(), m11.numericLiteral())
         )
       )
     );
     const memberAccess = constMemberExpression(
-      m10.fromCapture(varId),
+      m11.fromCapture(varId),
       propertyName
     );
-    const varMatcher = m10.variableDeclarator(
+    const varMatcher = m11.variableDeclarator(
       varId,
-      m10.objectExpression(objectProperties)
+      m11.objectExpression(objectProperties)
     );
     const literalMemberAccess = constMemberExpression(
-      m10.objectExpression(objectProperties),
+      m11.objectExpression(objectProperties),
       propertyName
     );
     return {
@@ -1153,9 +1230,9 @@ var inline_object_props_default = {
         if (!binding || !isReadonlyObject(binding, memberAccess)) return;
         inlineObjectProperties(
           binding,
-          m10.objectProperty(
+          m11.objectProperty(
             propertyKey,
-            m10.or(m10.stringLiteral(), m10.numericLiteral())
+            m11.or(m11.stringLiteral(), m11.numericLiteral())
           )
         );
         this.changes++;
@@ -1165,53 +1242,53 @@ var inline_object_props_default = {
 };
 
 // src/deobfuscate/string-array.ts
-import * as t9 from "@babel/types";
-import * as m11 from "@codemod/matchers";
+import * as t10 from "@babel/types";
+import * as m12 from "@codemod/matchers";
 import debug2 from "debug";
 function findStringArray(ast) {
   let results = [];
-  const functionName = m11.capture(m11.anyString());
-  const arrayIdentifier = m11.capture(m11.identifier());
-  const arrayExpression12 = m11.capture(
-    m11.or(
+  const functionName = m12.capture(m12.anyString());
+  const arrayIdentifier = m12.capture(m12.identifier());
+  const arrayExpression12 = m12.capture(
+    m12.or(
       // ["hello", "world"]
-      m11.arrayExpression(m11.arrayOf(m11.or(m11.stringLiteral(), undefinedMatcher))),
+      m12.arrayExpression(m12.arrayOf(m12.or(m12.stringLiteral(), undefinedMatcher))),
       // "hello,world".split(",")
-      m11.callExpression(constMemberExpression(m11.stringLiteral(), "split"), [
-        m11.stringLiteral()
+      m12.callExpression(constMemberExpression(m12.stringLiteral(), "split"), [
+        m12.stringLiteral()
       ])
     )
   );
-  const functionAssignment = m11.assignmentExpression(
+  const functionAssignment = m12.assignmentExpression(
     "=",
-    m11.identifier(m11.fromCapture(functionName)),
-    m11.functionExpression(
+    m12.identifier(m12.fromCapture(functionName)),
+    m12.functionExpression(
       void 0,
-      m11.zeroOrMore(),
-      m11.blockStatement([m11.returnStatement(m11.fromCapture(arrayIdentifier))])
+      m12.zeroOrMore(),
+      m12.blockStatement([m12.returnStatement(m12.fromCapture(arrayIdentifier))])
     )
   );
   const variableDeclaration16 = declarationOrAssignment(
     arrayIdentifier,
     arrayExpression12
   );
-  const matcher17 = m11.functionDeclaration(
-    m11.identifier(functionName),
-    m11.zeroOrMore(),
-    m11.or(
+  const matcher17 = m12.functionDeclaration(
+    m12.identifier(functionName),
+    m12.zeroOrMore(),
+    m12.or(
       // var array = ["hello", "world"];
       // return (getStringArray = function () { return array; })();
-      m11.blockStatement([
+      m12.blockStatement([
         variableDeclaration16,
-        m11.returnStatement(m11.callExpression(functionAssignment))
+        m12.returnStatement(m12.callExpression(functionAssignment))
       ]),
       // var array = ["hello", "world"];
       // getStringArray = function () { return array; });
       // return getStringArray();
-      m11.blockStatement([
+      m12.blockStatement([
         variableDeclaration16,
-        m11.expressionStatement(functionAssignment),
-        m11.returnStatement(m11.callExpression(m11.identifier(functionName)))
+        m12.expressionStatement(functionAssignment),
+        m12.returnStatement(m12.callExpression(m12.identifier(functionName)))
       ])
     )
   );
@@ -1222,8 +1299,8 @@ function findStringArray(ast) {
     }
     const split = current.arguments[0];
     const content = current.callee.object;
-    const elements = content.value.split(split.value).map((v) => t9.stringLiteral(v));
-    return t9.arrayExpression(elements);
+    const elements = content.value.split(split.value).map((v) => t10.stringLiteral(v));
+    return t10.arrayExpression(elements);
   }
   traverse_default(ast, {
     // Wrapped string array from later javascript-obfuscator versions
@@ -1252,9 +1329,9 @@ function findStringArray(ast) {
       const array = getArray();
       const length = array.elements.length;
       const binding = path.scope.getBinding(arrayIdentifier.current.name);
-      const memberAccess = m11.memberExpression(
-        m11.fromCapture(arrayIdentifier),
-        m11.numericLiteral(m11.matcher((value) => value < length))
+      const memberAccess = m12.memberExpression(
+        m12.fromCapture(arrayIdentifier),
+        m12.numericLiteral(m12.matcher((value) => value < length))
       );
       if (!binding.referenced || array.elements.length === 0) return;
       if (isReadonlyObject(binding, memberAccess)) {
@@ -1342,80 +1419,6 @@ var VMDecoder = class {
   }
 };
 
-// src/deobfuscate/constant-array.ts
-import * as t10 from "@babel/types";
-import * as m12 from "@codemod/matchers";
-var constant_array_default = {
-  name: "constant-array",
-  tags: ["unsafe"],
-  scope: true,
-  visitor() {
-    const arrayIdentifier = m12.capture(m12.identifier());
-    const arrayExpression12 = m12.capture(
-      m12.or(
-        // ["hello", "world"]
-        m12.arrayExpression(
-          m12.arrayOf(
-            m12.or(
-              m12.stringLiteral(),
-              m12.numericLiteral(),
-              m12.nullLiteral(),
-              m12.regExpLiteral(),
-              undefinedMatcher
-            )
-          )
-        ),
-        // "hello,world".split(",")
-        m12.callExpression(constMemberExpression(m12.stringLiteral(), "split"), [
-          m12.stringLiteral()
-        ])
-      )
-    );
-    const variableDeclaration16 = declaratorOrAssignmentExpression(
-      arrayIdentifier,
-      arrayExpression12
-    );
-    function getArray() {
-      const current = arrayExpression12.current;
-      if (current.type === "ArrayExpression") {
-        return current;
-      }
-      const split = current.arguments[0];
-      const content = current.callee.object;
-      const elements = content.value.split(split.value).map((v) => t10.stringLiteral(v));
-      return t10.arrayExpression(elements);
-    }
-    function inline(path) {
-      if (!variableDeclaration16.match(path.node)) return 0;
-      const array = getArray();
-      const length = array.elements.length;
-      const binding = path.scope.getBinding(arrayIdentifier.current.name);
-      const memberAccess = m12.memberExpression(
-        m12.fromCapture(arrayIdentifier),
-        m12.numericLiteral(m12.matcher((value) => value < length))
-      );
-      if (!binding.referenced || !isReadonlyObject(binding, memberAccess))
-        return 0;
-      inlineArrayElements(array, binding.referencePaths);
-      path.remove();
-      return 1;
-    }
-    return {
-      // Simple string array inlining (only `array[0]`, `array[1]` etc references, no rotating/decoding).
-      AssignmentExpression: {
-        exit(path) {
-          this.changes += inline(path);
-        }
-      },
-      VariableDeclarator: {
-        exit(path) {
-          this.changes += inline(path);
-        }
-      }
-    };
-  }
-};
-
 // src/deobfuscate/index.ts
 var deobfuscate_default = {
   name: "deobfuscate",
@@ -1424,6 +1427,9 @@ var deobfuscate_default = {
   async run(ast, state, sandbox) {
     if (!sandbox) return;
     const logger2 = debug4("webcrack:deobfuscate");
+    state.changes += applyTransforms(ast, [control_flow_object_default], {
+      noScope: true
+    }).changes;
     const stringArrays = findStringArray(ast);
     if (stringArrays.length === 0) {
       logger2("No string array found");
@@ -4803,6 +4809,37 @@ function isBrowser() {
 
 // src/deobfuscate/var-transformation.ts
 import * as t49 from "@babel/types";
+var var_transformation_default = {
+  name: "var-transformation",
+  tags: ["safe"],
+  scope: true,
+  visitor() {
+    return {
+      Function: {
+        exit(path) {
+          const { params } = path.node;
+          for (let i = params.length - 1; i >= 0; i--) {
+            const p = params[i];
+            if (!t49.isIdentifier(p)) continue;
+            const binding = path.scope.getBinding(p.name);
+            if (!binding || binding.constantViolations.length === 0) continue;
+            const cv = binding.constantViolations[0];
+            if (!t49.isAssignmentExpression(cv.node, { operator: "=" })) continue;
+            if (isBindingPossiblyUsedBefore(binding, cv)) continue;
+            cv.parentPath.replaceWith(
+              t49.variableDeclaration("var", [
+                t49.variableDeclarator(t49.cloneNode(p), cv.node.right)
+              ])
+            );
+            path.scope.removeBinding(p.name);
+            p.name = generateUid(path.scope, p.name);
+            this.changes++;
+          }
+        }
+      }
+    };
+  }
+};
 
 // src/index.ts
 function mergeOptions(options) {
@@ -4858,7 +4895,7 @@ async function webcrack(code, options = {}) {
     plugins.prepare && (() => plugins.prepare(ast)),
     options.deobfuscate && (() => applyTransformAsync(ast, deobfuscate_default, options.sandbox)),
     plugins.deobfuscate && (() => plugins.deobfuscate(ast)),
-    //() => applyTransforms(ast, [varTransformation]),
+    () => applyTransforms(ast, [var_transformation_default]),
     options.unminify && (() => {
       applyTransforms(ast, [transpile_default, unminify_default]);
     }),

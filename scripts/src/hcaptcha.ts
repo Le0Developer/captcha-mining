@@ -152,10 +152,17 @@ async function updateHCaptchaHS(version: string) {
   await fs.ensureDir(hsDir);
   await fs.ensureDir(current);
 
+  const paths = [];
   for (let i = 0; i < result.length; i += 2) {
     const file = result[i];
     const content = result[i + 1];
     await fs.writeFile(path.join(hsDir, file), content);
     await fs.writeFile(path.join(current, file), content);
+    paths.push(path.join(hsDir, file));
+    paths.push(path.join(current, file));
   }
+
+  const url = await tryAndPush(paths, `hCaptcha HS version ${hsVersion}`);
+
+  await notify(`Updated hCaptcha HS version ${hsVersion}: ${url}`);
 }

@@ -5,15 +5,21 @@ import { alert } from "./lib/notifications";
 import { updateTurnstile } from "./turnstile";
 import { updateVercelSecurity } from "./vercel";
 
-try {
-  await updateTurnstile();
-  await updateHCaptcha();
-  await updateBunnyShield();
-  await updateVercelSecurity();
-  await updateAWSWAF();
-} catch (err) {
-  await alert(
-    `Error in main execution: ${err instanceof Error ? err.stack : err}`,
-  );
-  throw err;
+const stages = [
+  updateTurnstile,
+  updateHCaptcha,
+  updateBunnyShield,
+  updateVercelSecurity,
+  updateAWSWAF,
+];
+
+for (const stage of stages) {
+  try {
+    await stage();
+  } catch (err) {
+    await alert(
+      `Error when getting ${stage.name}: ${err instanceof Error ? err.stack : err}`,
+    );
+    throw err;
+  }
 }

@@ -12,6 +12,7 @@ const stages = [
   updateVercelSecurity,
   updateAWSWAF,
 ];
+const errors = [];
 
 for (const stage of stages) {
   try {
@@ -20,6 +21,13 @@ for (const stage of stages) {
     await alert(
       `Error when getting ${stage.name}: ${err instanceof Error ? err.stack : err}`,
     );
-    throw err;
+    errors.push(err);
   }
+}
+
+if (errors.length) {
+  if (errors.length === 1) {
+    throw errors[0];
+  }
+  throw errors;
 }

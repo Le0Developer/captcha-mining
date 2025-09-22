@@ -23,11 +23,11 @@ export async function tryAndPush(files: Array<string>, commitMessage: string) {
     await git.commit(commitMessage);
     const commit = (await git.log({ maxCount: 1 })).latest!;
     if (commit.hash !== prevCommit.hash) {
+      await git.push();
       const commitUrl = `https://github.com/le0developer/captcha-mining/commit/${commit.hash}`;
-      return commitUrl
+      return commitUrl;
     }
   } catch (err) {
     console.error(err);
   }
 }
-

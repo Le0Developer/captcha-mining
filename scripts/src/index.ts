@@ -1,4 +1,3 @@
-import { updateAWSWAF } from "./awswaf";
 import { updateBunnyShield } from "./bunny-shield";
 import { updateHCaptcha } from "./hcaptcha";
 import { alert } from "./lib/notifications";
@@ -10,7 +9,7 @@ const stages = [
   updateHCaptcha,
   updateBunnyShield,
   updateVercelSecurity,
-  updateAWSWAF,
+  // updateAWSWAF,
 ];
 const errors = [];
 

@@ -10,14 +10,18 @@ await fs.ensureDir(dir);
 
 const assets = [
   ["https://newassets.hcaptcha.com/captcha/v1/%s/hcaptcha.js", "hcaptcha.js"],
-  [
-    "https://newassets.hcaptcha.com/captcha/v1/%s/challenge/image_label_binary/challenge.js",
-    "image_label_binary_challenge.js",
-  ],
-  [
-    "https://newassets.hcaptcha.com/captcha/v1/%s/challenge/image_label_area_select/challenge.js",
-    "image_label_area_select_challenge.js",
-  ],
+  ...[
+    "text_free_entry",
+    "image_label_binary",
+    "image_label_area_select",
+    "image_drag_drop",
+    "mfa",
+    "smsin",
+    "emailout",
+  ].map((name) => [
+    `https://newassets.hcaptcha.com/captcha/v1/%s/challenge/${name}/challenge.js`,
+    name + ".js",
+  ]),
   [
     "https://newassets.hcaptcha.com/captcha/v1/%s/static/hcaptcha.html",
     "hcaptcha.html",

@@ -14,6 +14,7 @@ const assets = [
     "text_free_entry",
     "image_label_binary",
     "image_label_area_select",
+    "image_label_multiple_choice",
     "image_drag_drop",
     "mfa",
     "smsin",

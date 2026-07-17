@@ -1,5 +1,5 @@
-/* { "version": "v1", "hash": "sha256-MEQCIHxPj88AToiLsbLjMw8oJiuoCTMDnfz/fnKVMunnClbiAiBXnf1RrOVmkTz9/TvhuzOOeQV0UYZi6isO11zD3c2yEA==" } */
-(function Nyiy() {
+/* { "version": "v1", "hash": "sha256-MEYCIQDJk33Fbt4TIz6ClPd8jcgkmU/VfVxPYfwDH/8s3UvEygIhAMU23cAGFupAcSVuf2olcPDiGzO4xazW3OLOtOxysbmI" } */
+(function hdbt() {
   "use strict";
 
   if (!Date.prototype.toISOString) {

@@ -3209,7 +3209,12 @@ var let_to_const_default = {
           }
         }
         if (!changes) return;
-        path.replaceWithMultiple(declarations);
+        // Loop headers accept a single declaration, not a list of statements.
+        if (declarations.length === 1) {
+          path.replaceWith(declarations[0]);
+        } else {
+          path.replaceWithMultiple(declarations);
+        }
         this.changes += changes;
       }
     }

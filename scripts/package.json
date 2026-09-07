@@ -17,7 +17,7 @@
     "fs-extra": "^11.3.0",
     "isolated-vm": "^5.0.4",
     "js-beautify": "^1.15.4",
-    "simple-git": "^3.27.0"
+    "simple-git": "3.36.0"
   },
   "trustedDependencies": [
     "isolated-vm"

@@ -11,10 +11,11 @@ import beautify from "js-beautify";
 const dir = path.resolve("../vercel-security");
 await fs.ensureDir(dir);
 
-const assets = [
-  "challenge.v2.min.js",
-  "challenge.v2.wasm",
-]
+const assets = ["challenge.v2.min.js", "challenge.v2.wasm"];
+
+function removeToken(s) {
+  return s.replace(/\="2\.\d+\.60\.[^"]*"/, `="<token>"`);
+}
 
 export async function updateVercelSecurity() {
   const files: Array<{
@@ -22,52 +23,61 @@ export async function updateVercelSecurity() {
     buffer: Buffer;
   }> = [];
   {
-    const res = await fetch("https://nextjs-boilerplate-kappa-puce-85.vercel.app/");
+    const res = await fetch(
+      "https://nextjs-boilerplate-kappa-puce-85.vercel.app/",
+    );
     const text = await res.text();
     const $ = load(text);
 
     const script = $("script");
-    const scriptContent = script.text()
-      .replace(/\="2\.\d+\.60\.[^"]*"/, `="<token>"`);
+    const scriptContent = removeToken(script.text());
     script.remove();
 
     files.push({
       file: "challenge.html",
-      buffer: Buffer.from(beautify.html($.html().replace(/\w+::\d+-\w+/g, "<request id>"))),
+      buffer: Buffer.from(
+        beautify.html($.html().replace(/\w+::\d+-\w+/g, "<request id>")),
+      ),
     });
 
     const cleaned = await cleanJavascript(scriptContent);
     files.push({
       file: "challenge.js",
-      buffer: Buffer.from(cleaned)
+      buffer: Buffer.from(cleaned),
     });
   }
 
   for (const file of assets) {
-    const res = await fetch(`https:///vercel.com/.well-known/vercel/security/static/${file}`);
+    const res = await fetch(
+      `https:///vercel.com/.well-known/vercel/security/static/${file}`,
+    );
     const buffer = Buffer.from(await res.arrayBuffer());
     if (!res.ok) {
       await alert(`Failed to fetch ${file}: ${res.status} ${buffer}`);
       continue;
     }
     if (file.endsWith(".js")) {
-      const text = buffer.toString("utf-8");
+      const text = removeToken(buffer.toString("utf-8"));
       const cleaned = await cleanJavascript(text);
       files.push({ file, buffer: Buffer.from(cleaned) });
     } else if (file.endsWith(".wasm")) {
       files.push({ file, buffer });
       // get all strings
-      const strings = Array.from(buffer.toString("ascii").matchAll(/[\x20-\x7E\xA0-\xFF]{7,}/g));
+      const strings = Array.from(
+        buffer.toString("ascii").matchAll(/[\x20-\x7E\xA0-\xFF]{7,}/g),
+      );
       files.push({
         file: `${file}.strings`,
         buffer: Buffer.from(strings.join("\n")),
-      })
+      });
     } else {
       files.push({ file, buffer });
     }
   }
 
-  const fullBytes = new Uint8Array(files.reduce((acc, { buffer }) => acc + buffer.length, 0) + files.length);
+  const fullBytes = new Uint8Array(
+    files.reduce((acc, { buffer }) => acc + buffer.length, 0) + files.length,
+  );
   let offset = 0;
   for (const { buffer } of files) {
     fullBytes.set(buffer, offset);
@@ -75,12 +85,16 @@ export async function updateVercelSecurity() {
     offset += buffer.length + 1;
   }
 
-  const version = Buffer.from(new Uint8Array(await crypto.subtle.digest("SHA-256", fullBytes))).toString("hex").slice(0, 16);
+  const version = Buffer.from(
+    new Uint8Array(await crypto.subtle.digest("SHA-256", fullBytes)),
+  )
+    .toString("hex")
+    .slice(0, 16);
   console.log(`Vercel Security version: ${version}`);
 
   const versionDir = path.join(dir, "archive", version);
   const current = path.join(dir, "current");
-  if (await fs.pathExists(versionDir) && await fs.pathExists(current)) {
+  if ((await fs.pathExists(versionDir)) && (await fs.pathExists(current))) {
     console.log("Already got this version");
     return;
   }
@@ -93,11 +107,15 @@ export async function updateVercelSecurity() {
     await fs.writeFile(path.join(current, file), buffer);
   }
 
-  const url = await tryAndPush(files.map(({ file }) => [
-    path.join(current, file),
-    path.join(versionDir, file),
-  ]).flat(), `Vercel Security version: ${version}`);
+  const url = await tryAndPush(
+    files
+      .map(({ file }) => [
+        path.join(current, file),
+        path.join(versionDir, file),
+      ])
+      .flat(),
+    `Vercel Security version: ${version}`,
+  );
 
   await notify(`Vercel Security updated to version ${version}: ${url}`);
 }
-

@@ -13,8 +13,8 @@ await fs.ensureDir(dir);
 
 const assets = ["challenge.v2.min.js", "challenge.v2.wasm"];
 
-function removeToken(s) {
-  return s.replace(/\="2\.\d+\.60\.[^"]*"/, `="<token>"`);
+function removeToken(s: string) {
+  return s.replace(/\=`2\.\d+\.60\.[^"]*`/, "=`<token>`");
 }
 
 export async function updateVercelSecurity() {

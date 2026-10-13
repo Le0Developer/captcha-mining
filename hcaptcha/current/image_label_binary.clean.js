@@ -150,7 +150,7 @@ var vF_8_89_0_ = function (p_6_F_8_89, p_25_F_8_89, p_5_F_8_89, p_3_F_8_89, p_1_
     this.badge = this.initComponent(p_5_F_8_89.Badge, {
       icon: {
         src: "data:image/svg+xml,%3csvg width='16' height='16' viewBox='0 0 16 16' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3cg clip-path='url(%23clip0_1354_4547)'%3e%3cpath d='M11.1111 6L6.83333 10.2778L4.88889 8.33333' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3e%3c/g%3e%3cdefs%3e%3cclipPath id='clip0_1354_4547'%3e%3crect width='9.33333' height='9.33333' fill='white' transform='translate(3.33334 3.66699)'/%3e%3c/clipPath%3e%3c/defs%3e%3c/svg%3e",
-        fallback: "https://newassets.hcaptcha.com/captcha/v1/73cc7444a905b542339bb26176648227595d0ab9/challenge/image_label_binary/static/images/icon-check.png"
+        fallback: "https://newassets.hcaptcha.com/captcha/v1/3ad63385dd7b1ba4c723b064fea46f9badeef72b/challenge/image_label_binary/static/images/icon-check.png"
       },
       theme: v_11_F_8_89
     }, this.$wrapper);

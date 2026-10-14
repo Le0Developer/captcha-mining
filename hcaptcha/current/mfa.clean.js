@@ -5275,14 +5275,15 @@ var vF_9_273_0_ = function (p_11_F_9_273, p_92_F_9_273, p_12_F_9_273, p_50_F_9_2
     this.taskView.translate();
     this.disclaimer.translate();
   };
-  var vO_3_1_F_9_2733 = {
+  var vO_4_1_F_9_273 = {
     400: "Rate limited or network error. Please retry.",
+    403: "Request not allowed.",
     429: "Your computer or network has sent too many requests.",
     500: "Cannot contact hCaptcha. Check your connection and try again."
   };
   function f_1_5_F_9_2733(p_1_F_9_2735) {
     try {
-      return p_50_F_9_273.translate(vO_3_1_F_9_2733[p_1_F_9_2735]);
+      return p_50_F_9_273.translate(vO_4_1_F_9_273[p_1_F_9_2735]);
     } catch (e_0_F_9_273) {
       return false;
     }

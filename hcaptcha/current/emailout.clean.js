@@ -1714,14 +1714,15 @@ var vF_8_191_0_ = function (p_14_F_8_191, p_56_F_8_191, p_10_F_8_191, p_31_F_8_1
     this.$prompt.translate();
     this.$taskView.translate();
   };
-  var vO_3_1_F_8_191 = {
+  var vO_4_1_F_8_191 = {
     400: "Rate limited or network error. Please retry.",
+    403: "Request not allowed.",
     429: "Your computer or network has sent too many requests.",
     500: "Cannot contact hCaptcha. Check your connection and try again."
   };
   function f_1_5_F_8_191(p_1_F_8_1912) {
     try {
-      return p_31_F_8_191.translate(vO_3_1_F_8_191[p_1_F_8_1912]);
+      return p_31_F_8_191.translate(vO_4_1_F_8_191[p_1_F_8_1912]);
     } catch (e_0_F_8_191) {
       return false;
     }

@@ -129,7 +129,7 @@ var vF_7_77_0_ = function (p_4_F_7_77, p_35_F_7_77, p_10_F_7_77, p_3_F_7_77, p_1
     this.$icon = this.initComponent(p_3_F_7_77.Graphic, {
       selector: "." + this.svgIconName,
       src: p_13_F_7_77.src,
-      fallback: "https://newassets.hcaptcha.com/captcha/v1/aca5f59ac1dedd238fa84e3f3225f622e5735959/challenge/text_free_entry/static/images/" + this.svgIconName + ".png",
+      fallback: "https://newassets.hcaptcha.com/captcha/v1/b4ffb616128b326eb735c84bb136bbbbddd55d08/challenge/text_free_entry/static/images/" + this.svgIconName + ".png",
       width: this.iconSize,
       fill: this.iconColor
     });

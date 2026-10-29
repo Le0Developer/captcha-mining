@@ -150,7 +150,7 @@ var vF_8_89_0_ = function (p_6_F_8_89, p_25_F_8_89, p_5_F_8_89, p_3_F_8_89, p_1_
     this.badge = this.initComponent(p_5_F_8_89.Badge, {
       icon: {
         src: "data:image/svg+xml,%3csvg width='16' height='16' viewBox='0 0 16 16' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3cg clip-path='url(%23clip0_1354_4547)'%3e%3cpath d='M11.1111 6L6.83333 10.2778L4.88889 8.33333' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3e%3c/g%3e%3cdefs%3e%3cclipPath id='clip0_1354_4547'%3e%3crect width='9.33333' height='9.33333' fill='white' transform='translate(3.33334 3.66699)'/%3e%3c/clipPath%3e%3c/defs%3e%3c/svg%3e",
-        fallback: "https://newassets.hcaptcha.com/captcha/v1/3b71cbe0d677f40e17dc54f11aed7a067d3e1066/challenge/image_label_binary/static/images/icon-check.png"
+        fallback: "https://newassets.hcaptcha.com/captcha/v1/317eeece91ff03e49adf705983728d95f03c053e/challenge/image_label_binary/static/images/icon-check.png"
       },
       theme: v_11_F_8_89
     }, this.$wrapper);
@@ -1010,40 +1010,46 @@ var vF_8_89_0_ = function (p_6_F_8_89, p_25_F_8_89, p_5_F_8_89, p_3_F_8_89, p_1_
     }
   };
   f_1_11_F_8_89.prototype.submit = function () {
-    var vThis_4_F_0_5F_8_89 = this;
+    var vThis_8_F_0_5F_8_89 = this;
     var v_3_F_0_5F_8_89 = this.view;
     var v_1_F_0_5F_8_893 = this.resolve;
     var v_3_F_0_5F_8_892 = this.reject;
-    try {
-      v_3_F_0_5F_8_89.lock(true);
-      f_1_1_F_8_89(v_3_F_0_5F_8_89.grid.getAnswers());
-      if (!f_0_1_F_8_894()) {
-        var vF_0_2_F_8_89_1_F_0_5F_8_89 = f_0_2_F_8_89();
-        v_3_F_0_5F_8_89.loadTasks(vF_0_2_F_8_89_1_F_0_5F_8_89).then(function () {
-          vThis_4_F_0_5F_8_89.served = f_0_3_F_8_89();
-          vThis_4_F_0_5F_8_89.syncCheckState();
-          vThis_4_F_0_5F_8_89.setFocus(0, vThis_4_F_0_5F_8_89.state.interaction);
-        }).catch(function (p_1_F_1_1F_0_5F_8_89) {
+    if (!this.state.loading) {
+      try {
+        v_3_F_0_5F_8_89.lock(true);
+        f_1_1_F_8_89(v_3_F_0_5F_8_89.grid.getAnswers());
+        if (!f_0_1_F_8_894()) {
+          vThis_8_F_0_5F_8_89.state.loading = true;
+          vThis_8_F_0_5F_8_89.emit("set-action-lock", true);
+          var vF_0_2_F_8_89_1_F_0_5F_8_89 = f_0_2_F_8_89();
+          v_3_F_0_5F_8_89.loadTasks(vF_0_2_F_8_89_1_F_0_5F_8_89).then(function () {
+            vThis_8_F_0_5F_8_89.served = f_0_3_F_8_89();
+            vThis_8_F_0_5F_8_89.state.loading = false;
+            vThis_8_F_0_5F_8_89.syncCheckState();
+            vThis_8_F_0_5F_8_89.emit("set-action-lock", false);
+            vThis_8_F_0_5F_8_89.setFocus(0, vThis_8_F_0_5F_8_89.state.interaction);
+          }).catch(function (p_1_F_1_1F_0_5F_8_89) {
+            v_3_F_0_5F_8_892({
+              event: p_6_F_8_89.CaptchaError.CHALLENGE_ERROR,
+              message: "Failed to setup task",
+              reason: p_1_F_1_1F_0_5F_8_89
+            });
+          });
+        } else if (f_0_1_F_8_895()) {
+          v_1_F_0_5F_8_893(f_0_1_F_8_893());
+        } else {
           v_3_F_0_5F_8_892({
             event: p_6_F_8_89.CaptchaError.CHALLENGE_ERROR,
-            message: "Failed to setup task",
-            reason: p_1_F_1_1F_0_5F_8_89
+            message: "Answers are incomplete"
           });
-        });
-      } else if (f_0_1_F_8_895()) {
-        v_1_F_0_5F_8_893(f_0_1_F_8_893());
-      } else {
+        }
+      } catch (e_1_F_0_5F_8_89) {
         v_3_F_0_5F_8_892({
           event: p_6_F_8_89.CaptchaError.CHALLENGE_ERROR,
-          message: "Answers are incomplete"
+          message: "Failed to setup task",
+          reason: e_1_F_0_5F_8_89.message
         });
       }
-    } catch (e_1_F_0_5F_8_89) {
-      v_3_F_0_5F_8_892({
-        event: p_6_F_8_89.CaptchaError.CHALLENGE_ERROR,
-        message: "Failed to setup task",
-        reason: e_1_F_0_5F_8_89.message
-      });
     }
   };
   f_1_11_F_8_89.prototype.report = function (p_1_F_1_3F_8_89) {
